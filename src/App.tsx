@@ -1,162 +1,152 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History } from 'lucide-react';
-import { Dish, HistoryItem } from './types';
+import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon } from 'lucide-react';
+import { Dish, HistoryItem, UserPreferences } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI, Type } from "@google/genai";
+import Onboarding from './components/Onboarding';
+import Settings from './components/Settings';
+import { usePreferences } from './hooks/usePreferences';
+import { buildTeaserPrompt, buildDetailPrompt } from './lib/buildPrompt';
+
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export default function App() {
-  const DEFAULT_DISHES: Dish[] = [
-    {
-      name: "Smokey Nigerian Jollof Rice with Grilled Chicken",
-      cuisine: "Nigerian",
-      why: "A classic West African staple. Rich, smokey, and perfectly spiced for a week of comforting lunches.",
-      difficulty: "Intermediate",
-      prepTime: "90 mins",
-      servings: 12,
-      ingredients: [
-        "4 cups Long-grain parboiled rice",
-        "6 large Red bell peppers (Tatashe)",
-        "3 Scotch bonnet peppers (Atarodo)",
-        "2 large Red onions",
-        "1kg Chicken thighs (bone-in for flavor)",
-        "1 cup Tomato paste",
-        "2 cups Vegetable oil",
-        "4 Bay leaves",
-        "2 tbsp Thyme",
-        "2 tbsp Curry powder",
-        "6 Knorr/Maggi cubes",
-        "Salt to taste"
-      ],
-      steps: [
-        "Wash the rice thoroughly in warm water to remove excess starch. Parboil for 10 minutes, rinse again in cold water, and set aside in a sieve to drain.",
-        "Remove seeds from red bell peppers. Blend the bell peppers, scotch bonnets, and 1.5 onions with a little water until smooth.",
-        "Pour the blended pepper mix into a pot and boil on medium-high heat until the water evaporates and you're left with a thick concentrate.",
-        "In a separate pot, boil the chicken thighs with sliced onions, thyme, curry, and 2 bouillon cubes until tender. Reserve the stock (this is liquid gold).",
-        "Grill or air-fry the boiled chicken at 200°C for 15-20 minutes until the skin is crispy and golden brown.",
-        "Heat vegetable oil in a large, heavy-bottomed pot. Sauté the remaining half onion until translucent, then add tomato paste. Fry for 5-8 minutes, stirring constantly to remove the sour taste.",
-        "Add the boiled-down pepper concentrate to the tomato paste. Fry for another 10 minutes until the oil starts to float to the top.",
-        "Season the base with remaining bouillon cubes, bay leaves, and salt. Pour in the reserved chicken stock and bring to a rolling boil.",
-        "Add the parboiled rice. The liquid should be just level with the rice. If it's too much, the rice will be soggy; if too little, it won't cook.",
-        "Cover the pot tightly with a double layer of aluminum foil, then the lid. This traps the steam, which is what actually cooks the rice.",
-        "Cook on very low heat for 30 minutes. Do not open the pot. After 30 mins, check for tenderness. If needed, cook for another 10 mins.",
-        "Once cooked, turn off the heat and stir in a little butter or oil for a glossy finish. Let it sit for 10 mins before serving to allow the flavors to settle."
-      ]
-    },
-    {
-      name: "Thai Green Curry with Prawns & Bamboo Shoots",
-      cuisine: "Asian",
-      why: "Vibrant, aromatic, and dairy-free. Uses coconut milk for a rich texture that holds up beautifully when reheated.",
-      difficulty: "Easy",
-      prepTime: "45 mins",
-      servings: 12,
-      ingredients: [
-        "800g King prawns, peeled and deveined",
-        "4 cans (400ml each) Full-fat coconut milk",
-        "4 tbsp Green curry paste",
-        "2 cans Bamboo shoots, drained",
-        "4 large Bell peppers, sliced into strips",
-        "2 bunches Thai basil",
-        "4 tbsp Fish sauce",
-        "2 tbsp Palm sugar",
-        "6 Kaffir lime leaves, torn",
-        "Jasmine rice for serving (8 cups cooked)"
-      ],
-      steps: [
-        "Open the cans of coconut milk without shaking them. Scoop out the thick 'cream' from the top and put it into a large wok or heavy pot.",
-        "Heat the coconut cream over medium heat until it starts to bubble and the oil begins to separate from the solids.",
-        "Add the green curry paste to the cream. Use a wooden spoon to break it up and fry it in the oil for 2-3 minutes until it becomes intensely fragrant.",
-        "Pour in the remaining coconut milk from the cans. Add the torn kaffir lime leaves and palm sugar. Bring the mixture to a gentle simmer.",
-        "Add the sliced bell peppers and drained bamboo shoots. Simmer for 5-7 minutes until the peppers are slightly softened but still have a bit of 'snap'.",
-        "Taste the sauce. Add the fish sauce one tablespoon at a time until the balance of salty, sweet, and spicy is perfect.",
-        "Gently add the prawns to the simmering sauce. Cook for only 3-4 minutes. As soon as they turn pink and curl into a 'C' shape, they are done.",
-        "Turn off the heat immediately. Stir in the fresh Thai basil leaves; the residual heat will wilt them and release their anise-like aroma.",
-        "Serve the curry in deep bowls over a generous portion of fluffy jasmine rice. For batch cooking, store the rice and curry in separate compartments."
-      ]
-    },
-    {
-      name: "Slow-Cooked Beef Suya Stew with Sweet Potato",
-      cuisine: "West African",
-      why: "A fusion of traditional Suya spices in a hearty stew format. The sweet potato adds natural creaminess without dairy.",
-      difficulty: "Intermediate",
-      prepTime: "120 mins",
-      servings: 12,
-      ingredients: [
-        "1.5kg Beef chuck, cubed into 1-inch pieces",
-        "4 tbsp Suya spice (Yaji)",
-        "4 large Sweet potatoes, peeled and cubed",
-        "2 large Onions, finely chopped",
-        "4 cloves Garlic, minced",
-        "1 tbsp Fresh ginger, grated",
-        "2 cans Chopped tomatoes",
-        "1L Beef stock",
-        "3 tbsp Natural peanut butter",
-        "Fresh cilantro and sliced red onions for garnish"
-      ],
-      steps: [
-        "In a large bowl, toss the beef cubes with 2 tablespoons of Suya spice until every piece is thoroughly coated. Let it marinate for 20 mins.",
-        "Heat oil in a large heavy pot. Brown the beef in batches, ensuring you don't crowd the pan. Remove the beef and set aside.",
-        "In the same pot, add the chopped onions. Scrape the bottom of the pot to release the flavorful browned bits (fond). Cook until onions are soft.",
-        "Add the minced garlic and grated ginger. Sauté for 1-2 minutes until you can smell the aromatics.",
-        "Stir in the chopped tomatoes and the remaining 2 tablespoons of Suya spice. Cook for 5 minutes until the tomatoes begin to break down.",
-        "Return the beef to the pot. Pour in the beef stock and stir in the peanut butter until it's fully incorporated into the liquid.",
-        "Bring to a boil, then reduce the heat to the lowest setting. Cover and simmer for 1 hour and 15 minutes, or until the beef is starting to get tender.",
-        "Add the cubed sweet potatoes to the pot. Continue to simmer for another 25-30 minutes. The potatoes should be soft, and some will slightly dissolve, thickening the stew.",
-        "Check the seasoning. The Suya spice is salty, so you may not need much extra salt. Add a squeeze of lime if it needs brightness.",
-        "Garnish with fresh cilantro and very thinly sliced raw red onions for a traditional Suya crunch."
-      ]
-    }
-  ];
-
-  const [view, setView] = useState<'home' | 'recipe' | 'history'>('home');
-  const [options, setOptions] = useState<Dish[]>(DEFAULT_DISHES);
+  const { preferences, savePreferences, isLoaded } = usePreferences();
+  const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings'>('home');
+  const [options, setOptions] = useState<Dish[]>([]);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [lockedDish, setLockedDish] = useState<Dish | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio?.hasSelectedApiKey) {
+        const has = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(has);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleOpenKeySelector = async () => {
+    if (window.aistudio?.openSelectKey) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   useEffect(() => {
     const savedHistory = localStorage.getItem('sunday_history');
     if (savedHistory) {
       setHistory(JSON.parse(savedHistory));
     }
-    // We keep the default dishes initially, but can refresh if needed
   }, []);
+
+  useEffect(() => {
+    if (isLoaded && preferences.onboardingComplete && options.length === 0) {
+      fetchSuggestions();
+    }
+  }, [isLoaded, preferences.onboardingComplete]);
+
+  const fetchDishImage = async (dish: Dish, index: number) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-image-preview',
+        contents: {
+          parts: [
+            { text: `An authentic, high-end food photograph of ${dish.name} (${dish.cuisine}). Traditional presentation, served in culturally appropriate serving ware (e.g., clay pots, wooden bowls, or heritage ceramics). Rich textures, steam rising, natural side-lighting. Avoid generic modern kitchen backgrounds; use warm, atmospheric, and culturally relevant settings. Focus on the soul and heritage of the dish. No people.` },
+          ],
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "1:1",
+            imageSize: "1K"
+          },
+        },
+      });
+
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64 = part.inlineData.data;
+          const url = `data:image/png;base64,${base64}`;
+          setOptions(prev => {
+            const next = [...prev];
+            if (next[index]) next[index] = { ...next[index], imageUrl: url };
+            return next;
+          });
+          break;
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to fetch image for ${dish.name}:`, error);
+    }
+  };
+
+  const fetchDishDetails = async (dish: Dish, index: number) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const prompt = buildDetailPrompt(dish, preferences);
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              ingredients: { type: Type.ARRAY, items: { type: Type.STRING } },
+              sections: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    steps: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  },
+                  required: ["title", "steps"],
+                },
+              },
+            },
+            required: ["ingredients", "sections"],
+          },
+        },
+      });
+
+      const text = response.text;
+      if (text) {
+        const data = JSON.parse(text);
+        setOptions(prev => {
+          const next = [...prev];
+          if (next[index]) next[index] = { ...next[index], ...data };
+          return next;
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to fetch details for ${dish.name}:`, error);
+    }
+  };
 
   const fetchSuggestions = async () => {
     setLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-      const prompt = `You are a world-class culinary expert specializing in West African and Asian fusion. 
-Build a weekly meal plan for a couple (12 portions total, for 6 days). 
-
-CRITICAL QUALITY GUIDELINES:
-- Dishes must be "Chef-Quality": vibrant flavors, balanced textures, and sophisticated spice profiles.
-- West African focus: Use authentic ingredients like Scotch Bonnet, locust beans (iru), crayfish, or Yaji spice.
-- Asian focus: Use aromatics like lemongrass, galangal, Thai basil, or miso.
-- Descriptions (the "why") should be evocative and mouth-watering.
-
-INSTRUCTION GUIDELINES (MANDATORY):
-- Steps must be EXTREMELY DETAILED and granular. Do not combine multiple major actions into one step.
-- Provide 8-12 steps per recipe.
-- Include specific techniques (e.g., "deglazing", "tempering spices", "reducing the base").
-- Mention visual cues (e.g., "until the oil separates", "until the aromatics are fragrant", "until the beef is fork-tender").
-- Explain the 'why' behind certain steps (e.g., "to remove the sourness of the tomatoes").
-
-CONSTRAINTS:
-- No dairy (lactose intolerant). Use coconut milk, nut milks, or oils for richness.
-- No ungrilled fish. Prawns, crab, shrimp, and grilled/smoked fish are excellent.
-- Batch-cookable: Must taste even better on day 3. Avoid ingredients that go soggy (like delicate greens).
-- 2–3 hour Sunday cook time.
-
-Avoid these recent dishes: ${history.map(h => h.dish.name).join(", ")}.
-
-Return exactly 3 distinct dish options.`;
+      const prompt = buildTeaserPrompt(preferences, history.map(h => h.dish.name));
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -168,16 +158,15 @@ Return exactly 3 distinct dish options.`;
             items: {
               type: Type.OBJECT,
               properties: {
-                name: { type: Type.STRING, description: "Elegant, descriptive dish name" },
-                cuisine: { type: Type.STRING, description: "Specific region or style" },
-                why: { type: Type.STRING, description: "A 1-2 sentence evocative culinary description" },
+                name: { type: Type.STRING },
+                cuisine: { type: Type.STRING },
+                why: { type: Type.STRING },
                 difficulty: { type: Type.STRING, enum: ["Easy", "Intermediate"] },
-                prepTime: { type: Type.STRING, description: "Total time including prep" },
-                servings: { type: Type.NUMBER, description: "Must be 12" },
-                ingredients: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Scaled for 12 portions" },
-                steps: { type: Type.ARRAY, items: { type: Type.STRING }, description: "EXTREMELY DETAILED, granular, step-by-step professional instructions (8-12 steps)" },
+                prepTime: { type: Type.STRING },
+                servings: { type: Type.NUMBER },
+                type: { type: Type.STRING, enum: ["Heritage", "Explorer"] },
               },
-              required: ["name", "cuisine", "why", "difficulty", "prepTime", "servings", "ingredients", "steps"],
+              required: ["name", "cuisine", "why", "difficulty", "prepTime", "servings", "type"],
             },
           },
         },
@@ -188,6 +177,11 @@ Return exactly 3 distinct dish options.`;
         const data = JSON.parse(text);
         if (Array.isArray(data)) {
           setOptions(data);
+          // Start fetching images and details in parallel for each dish
+          data.forEach((dish, i) => {
+            fetchDishImage(dish, i);
+            fetchDishDetails(dish, i);
+          });
         }
       }
     } catch (error) {
@@ -221,9 +215,57 @@ Return exactly 3 distinct dish options.`;
     return `${firstDay.toLocaleDateString('en-US', options)} – ${lastDay.toLocaleDateString('en-US', options)}`;
   };
 
+  if (!isLoaded) return null;
+
+  if (!hasApiKey) {
+    return (
+      <div className="min-h-screen bg-[#f9f6f1] flex flex-col items-center justify-center p-6 text-center">
+        <h1 className="text-3xl font-bold tracking-tighter mb-4">sunday.</h1>
+        <p className="text-sm opacity-60 max-w-xs mb-8 leading-relaxed">
+          To generate authentic, high-quality visuals for your heritage dishes, we need to use a specialized model.
+        </p>
+        <button
+          onClick={handleOpenKeySelector}
+          className="px-8 py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight shadow-lg shadow-black/10 active:scale-95 transition-transform"
+        >
+          Select API Key to Start
+        </button>
+        <p className="mt-6 text-[10px] opacity-30 uppercase tracking-widest">
+          Requires a paid Google Cloud project key
+        </p>
+        <a 
+          href="https://ai.google.dev/gemini-api/docs/billing" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="mt-2 text-[10px] underline opacity-30"
+        >
+          Learn about billing
+        </a>
+      </div>
+    );
+  }
+
+  if (!preferences.onboardingComplete) {
+    return <Onboarding onComplete={savePreferences} />;
+  }
+
+  if (view === 'settings') {
+    return (
+      <Settings 
+        preferences={preferences} 
+        onSave={(newPrefs) => {
+          savePreferences(newPrefs);
+          setView('home');
+          fetchSuggestions();
+        }} 
+        onBack={() => setView('home')} 
+      />
+    );
+  }
+
   if (view === 'history') {
     return (
-      <div className="min-h-screen bg-[#fbfaf8] text-black font-sans p-6 max-w-md mx-auto">
+      <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto">
         <header className="flex justify-between items-center mb-12">
           <button onClick={() => setView('home')} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
@@ -252,18 +294,22 @@ Return exactly 3 distinct dish options.`;
   if (view === 'recipe' && (selectedDish || lockedDish)) {
     const dish = lockedDish || selectedDish!;
     return (
-      <div className="min-h-screen bg-[#fbfaf8] text-black font-sans p-6 max-w-md mx-auto">
+      <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto">
         <header className="flex justify-between items-center mb-8">
           <button onClick={() => setView('home')} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <div className="flex items-center gap-2 px-3 py-1 bg-black text-white rounded-full text-[10px] font-bold uppercase tracking-widest">
-            <Check size={12} /> Locked
-          </div>
+          {lockedDish && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-black text-white rounded-full text-[10px] font-bold uppercase tracking-widest">
+              <Check size={12} /> Locked
+            </div>
+          )}
         </header>
 
         <div className="mb-12">
-          <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-2">{dish.cuisine}</p>
+          <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-black/5 border border-black/5 rounded-md mb-4">
+            {dish.cuisine}
+          </span>
           <h1 className="text-4xl font-bold tracking-tight leading-tight mb-4">{dish.name}</h1>
           <p className="text-sm opacity-60 leading-relaxed">{dish.why}</p>
         </div>
@@ -275,57 +321,91 @@ Return exactly 3 distinct dish options.`;
           </div>
           <div className="bg-white border border-black/5 p-4 rounded-2xl shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Portions</p>
-            <p className="text-sm font-medium">{dish.servings} (2 people × 6 days)</p>
+            <p className="text-sm font-medium">{dish.servings}</p>
           </div>
         </div>
 
         <section className="mb-12">
           <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Ingredients</h3>
-          <ul className="space-y-4">
-            {dish.ingredients.map((ing, i) => (
-              <li key={i} className="flex items-start gap-3 text-sm">
-                <div className="w-1.5 h-1.5 rounded-full bg-black/10 mt-1.5 shrink-0" />
-                <span className="opacity-80">{ing}</span>
-              </li>
-            ))}
-          </ul>
+          {!dish.ingredients ? (
+            <div className="flex items-center gap-3 opacity-30 py-4">
+              <Loader2 size={16} className="animate-spin" />
+              <p className="text-xs font-bold uppercase tracking-widest">Writing your grocery list...</p>
+            </div>
+          ) : (
+            <ul className="space-y-4">
+              {dish.ingredients.map((ing, i) => (
+                <li key={i} className="flex items-start gap-3 text-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-black/10 mt-1.5 shrink-0" />
+                  <span className="opacity-80">{ing}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="mb-24">
           <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Instructions</h3>
-          <div className="space-y-8">
-            {dish.steps.map((step, i) => (
-              <div key={i} className="flex gap-4">
-                <span className="text-[10px] font-bold opacity-20 mt-0.5">{String(i + 1).padStart(2, '0')}</span>
-                <p className="text-sm leading-relaxed opacity-80">{step}</p>
-              </div>
-            ))}
-          </div>
+          {!dish.sections ? (
+            <div className="flex items-center gap-3 opacity-30 py-4">
+              <Loader2 size={16} className="animate-spin" />
+              <p className="text-xs font-bold uppercase tracking-widest">Perfecting the technique...</p>
+            </div>
+          ) : (
+            <div className="space-y-12">
+              {dish.sections.map((section, sectionIdx) => (
+                <div key={sectionIdx}>
+                  <h4 className="text-xs font-bold uppercase tracking-widest mb-6 opacity-60 flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-black/20" />
+                    {section.title}
+                  </h4>
+                  <div className="space-y-8">
+                    {section.steps.map((step, stepIdx) => (
+                      <div key={stepIdx} className="flex gap-4">
+                        <span className="text-[10px] font-bold opacity-20 mt-0.5">
+                          {String(dish.sections!.slice(0, sectionIdx).reduce((acc, s) => acc + s.steps.length, 0) + stepIdx + 1).padStart(2, '0')}
+                        </span>
+                        <p className="text-sm leading-relaxed opacity-80">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#fbfaf8] text-black font-sans p-6 max-w-md mx-auto selection:bg-black selection:text-white">
+    <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto selection:bg-black selection:text-white">
       <header className="flex justify-between items-start mb-16">
         <div>
           <h1 className="text-2xl font-bold tracking-tighter mb-1">sunday.</h1>
           <p className="text-[10px] font-bold uppercase tracking-widest opacity-30">{getWeekRange()}</p>
         </div>
-        <button 
-          onClick={() => setView('history')}
-          className="p-2 rounded-full hover:bg-black/5 transition-colors"
-        >
-          <History size={20} className="opacity-40" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setView('history')}
+            className="p-2 rounded-full hover:bg-black/5 transition-colors"
+          >
+            <History size={20} className="opacity-40" />
+          </button>
+          <button 
+            onClick={() => setView('settings')}
+            className="p-2 rounded-full hover:bg-black/5 transition-colors"
+          >
+            <SettingsIcon size={20} className="opacity-40" />
+          </button>
+        </div>
       </header>
 
       <main>
         <div className="mb-12">
           <h2 className="text-4xl font-bold tracking-tight mb-3">What's cooking this week?</h2>
           <p className="text-sm opacity-50 leading-relaxed">
-            Pick one dish to prep on Sunday. Portions for two, all week.
+            Pick one dish to prep on Sunday. Portions for {preferences.householdSize.toLowerCase()}, all week.
           </p>
         </div>
 
@@ -357,17 +437,56 @@ Return exactly 3 distinct dish options.`;
                       : "border-black/5 hover:border-black/20"
                   )}
                 >
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 bg-[#fbfaf8] border border-black/5 rounded-md">
+                  <div className="relative aspect-square mb-4 overflow-hidden rounded-xl bg-black/5">
+                    <AnimatePresence mode="wait">
+                      {dish.imageUrl ? (
+                        <motion.img
+                          key="image"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          src={dish.imageUrl}
+                          alt={dish.name}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <motion.div
+                          key="shimmer"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="w-full h-full flex items-center justify-center"
+                        >
+                          <div className="flex flex-col items-center gap-2 opacity-20">
+                            <Loader2 size={20} className="animate-spin" />
+                            <span className="text-[8px] font-bold uppercase tracking-widest">Developing Visual...</span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <div className="absolute top-3 left-3">
+                      <span className={cn(
+                        "text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-md backdrop-blur-md border",
+                        dish.type === 'Heritage' 
+                          ? "bg-black/80 text-white border-white/10" 
+                          : "bg-white/80 text-black border-black/10"
+                      )}>
+                        {dish.type}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-y-3 mb-4">
+                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-[#f9f6f1] border border-black/5 rounded-md">
                       {dish.cuisine}
                     </span>
                     <span className="text-[9px] font-bold uppercase tracking-widest opacity-30">
                       {dish.difficulty} • {dish.prepTime}
                     </span>
                   </div>
-                  <h3 className="text-xl font-bold tracking-tight mb-2">{dish.name}</h3>
-                  <p className="text-xs opacity-50 line-clamp-2 leading-relaxed mb-4">{dish.why}</p>
-                  <div className="flex items-center text-[10px] font-bold uppercase tracking-widest opacity-40">
+                  <h3 className="text-xl font-bold tracking-tight leading-tight mb-3">{dish.name}</h3>
+                  <p className="text-xs opacity-50 line-clamp-3 leading-relaxed mb-5">{dish.why}</p>
+                  <div className="flex items-center text-[10px] font-bold uppercase tracking-widest opacity-40 group-hover:opacity-100 transition-opacity">
                     View Recipe <ChevronRight size={12} className="ml-1" />
                   </div>
                 </motion.button>
@@ -377,7 +496,7 @@ Return exactly 3 distinct dish options.`;
         </div>
 
         {/* Fixed bottom area with solid background to prevent interference */}
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fbfaf8] border-t border-black/5 max-w-md mx-auto z-50">
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
           <div className="space-y-3">
             <button
               disabled={!selectedDish || loading}
