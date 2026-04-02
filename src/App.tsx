@@ -374,6 +374,27 @@ export default function App() {
             </div>
           )}
         </section>
+
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
+          <button
+            disabled={lockedDish?.name === dish.name}
+            onClick={lockInDish}
+            className={cn(
+              "w-full py-4 rounded-xl font-bold text-sm tracking-tight transition-all active:scale-95 shadow-lg shadow-black/10 flex items-center justify-center gap-2",
+              lockedDish?.name === dish.name 
+                ? "bg-white border border-black/10 text-black/40" 
+                : "bg-black text-white"
+            )}
+          >
+            {lockedDish?.name === dish.name ? (
+              <>
+                <Check size={16} />
+                <span>Locked for this week</span>
+              </>
+            ) : 'Lock in this dish'}
+          </button>
+        </div>
+        <div className="h-12" />
       </div>
     );
   }
@@ -429,7 +450,10 @@ export default function App() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
-                  onClick={() => setSelectedDish(dish)}
+                  onClick={() => {
+                    setSelectedDish(dish);
+                    setView('recipe');
+                  }}
                   className={cn(
                     "w-full text-left p-6 rounded-2xl border transition-all duration-300 bg-white shadow-sm",
                     selectedDish?.name === dish.name 
@@ -464,7 +488,7 @@ export default function App() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute top-3 left-3 flex gap-2">
                       <span className={cn(
                         "text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-md backdrop-blur-md border",
                         dish.type === 'Heritage' 
@@ -473,6 +497,11 @@ export default function App() {
                       )}>
                         {dish.type}
                       </span>
+                      {lockedDish?.name === dish.name && (
+                        <span className="text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-md bg-green-500 text-white border border-green-400">
+                          Locked
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -499,11 +528,21 @@ export default function App() {
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
           <div className="flex gap-3">
             <button
-              disabled={!selectedDish || loading}
+              disabled={!selectedDish || loading || lockedDish?.name === selectedDish?.name}
               onClick={lockInDish}
-              className="flex-1 py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight disabled:opacity-10 disabled:grayscale transition-all active:scale-95 shadow-lg shadow-black/10 whitespace-nowrap px-2"
+              className={cn(
+                "flex-1 py-4 rounded-xl font-bold text-sm tracking-tight transition-all active:scale-95 shadow-lg shadow-black/10 whitespace-nowrap px-2 flex items-center justify-center gap-2",
+                lockedDish?.name === selectedDish?.name 
+                  ? "bg-white border border-black/10 text-black/40" 
+                  : "bg-black text-white"
+              )}
             >
-              Lock in this dish
+              {lockedDish?.name === selectedDish?.name ? (
+                <>
+                  <Check size={14} />
+                  <span>Locked</span>
+                </>
+              ) : 'Lock in this dish'}
             </button>
             <button
               onClick={fetchSuggestions}
@@ -516,7 +555,7 @@ export default function App() {
           </div>
         </div>
       </main>
-      <div className="h-48" />
+      <div className="h-24" />
     </div>
   );
 }
