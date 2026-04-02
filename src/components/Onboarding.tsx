@@ -18,7 +18,6 @@ const STEPS = [
   'Household',
   'Cuisines',
   'Restrictions',
-  'Skill',
   'PrepTime',
   'Variety',
   'Done'
@@ -30,7 +29,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     householdSize: '',
     cuisines: [],
     restrictions: [],
-    skillLevel: '',
     prepTime: '',
     variety: '',
     onboardingComplete: false,
@@ -58,10 +56,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     if (step === 1) return !!prefs.householdSize;
     if (step === 2) return prefs.cuisines.length > 0;
     if (step === 3) return prefs.restrictions.length > 0;
-    if (step === 4) return !!prefs.skillLevel;
-    if (step === 5) return !!prefs.prepTime;
-    if (step === 6) return !!prefs.variety;
-    if (step === 7) return true;
+    if (step === 4) return !!prefs.prepTime;
+    if (step === 5) return !!prefs.variety;
+    if (step === 6) return true;
     return false;
   };
 
@@ -76,7 +73,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </p>
             <button
               onClick={next}
-              className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight"
+              className="w-full py-4 bg-white border border-zinc-200 text-zinc-700 rounded-xl font-bold text-sm tracking-tight shadow-sm active:scale-95 transition-all"
             >
               Get started
             </button>
@@ -94,7 +91,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   onClick={() => setSingle('householdSize', option)}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all",
-                    prefs.householdSize === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                    prefs.householdSize === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   {option}
@@ -123,7 +120,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   onClick={() => toggleMulti('cuisines', option)}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all flex justify-between items-center gap-4",
-                    prefs.cuisines.includes(option) ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                    prefs.cuisines.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
@@ -155,7 +152,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   onClick={() => toggleMulti('restrictions', option)}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all flex justify-between items-center gap-4",
-                    prefs.restrictions.includes(option) ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                    prefs.restrictions.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
@@ -167,31 +164,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         );
 
       case 4:
-        return (
-          <div className="px-6">
-            <h2 className="text-2xl font-bold tracking-tight mb-8">What's your cooking skill level?</h2>
-            <div className="space-y-3">
-              {[
-                'Beginner — simple recipes, minimal prep',
-                'Intermediate — comfortable in the kitchen',
-                'Advanced — bring on the complexity'
-              ].map(option => (
-                <button
-                  key={option}
-                  onClick={() => setSingle('skillLevel', option)}
-                  className={cn(
-                    "w-full text-left p-5 rounded-xl border transition-all",
-                    prefs.skillLevel === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
-                  )}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-
-      case 5:
         return (
           <div className="px-6">
             <h2 className="text-2xl font-bold tracking-tight mb-8">How long can you cook on prep day?</h2>
@@ -207,7 +179,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   onClick={() => setSingle('prepTime', option)}
                   className={cn(
                     "p-5 rounded-xl border transition-all text-left text-sm font-medium leading-tight",
-                    prefs.prepTime === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                    prefs.prepTime === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   {option}
@@ -217,7 +189,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         );
 
-      case 6:
+      case 5:
         return (
           <div className="px-6">
             <h2 className="text-2xl font-bold tracking-tight mb-8">How do you want variety?</h2>
@@ -232,7 +204,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   onClick={() => setSingle('variety', option)}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all",
-                    prefs.variety === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                    prefs.variety === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   {option}
@@ -242,7 +214,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         );
 
-      case 7:
+      case 6:
         return (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <h1 className="text-4xl font-bold tracking-tight mb-4">you're all set.</h1>
@@ -251,7 +223,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </p>
             <button
               onClick={() => onComplete({ ...prefs, onboardingComplete: true })}
-              className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight"
+              className="w-full py-4 bg-white border border-zinc-200 text-zinc-700 rounded-xl font-bold text-sm tracking-tight shadow-sm active:scale-95 transition-all"
             >
               See this week's dishes
             </button>
@@ -264,21 +236,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-[#f9f6f1] z-[100] flex flex-col max-w-md mx-auto overflow-hidden">
+    <div className="fixed inset-0 bg-zinc-50 z-[100] flex flex-col max-w-md mx-auto overflow-hidden text-zinc-900">
       {step > 0 && step < STEPS.length - 1 && (
         <div className="px-6 pt-8 pb-4">
           <div className="flex items-center justify-between mb-4">
-            <button onClick={back} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
+            <button onClick={back} className="p-2 -ml-2 hover:bg-zinc-200 rounded-full transition-colors">
               <ArrowLeft size={20} />
             </button>
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40">Step {step} of {STEPS.length - 2}</p>
             <div className="w-10" />
           </div>
-          <div className="h-1 bg-black/5 rounded-full overflow-hidden">
+          <div className="h-1 bg-zinc-200 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${(step / (STEPS.length - 2)) * 100}%` }}
-              className="h-full bg-black"
+              className="h-full bg-zinc-600"
             />
           </div>
         </div>
@@ -300,11 +272,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       {step > 0 && step < STEPS.length - 1 && (
-        <div className="p-6 bg-[#f9f6f1] border-t border-black/5">
+        <div className="p-6 bg-zinc-50 border-t border-zinc-200">
           <button
             disabled={!isStepValid()}
             onClick={next}
-            className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight disabled:opacity-10 transition-all active:scale-95"
+            className="w-full py-4 bg-white border border-zinc-200 text-zinc-700 rounded-xl font-bold text-sm tracking-tight shadow-sm disabled:opacity-50 transition-all active:scale-95"
           >
             Continue
           </button>

@@ -30,11 +30,10 @@ Return exactly 3 distinct dish options. For each dish, provide:
 }
 
 export function buildDetailPrompt(dish: any, preferences: UserPreferences): string {
-  const { householdSize, skillLevel } = preferences;
+  const { householdSize } = preferences;
 
   return `You are a world-class culinary expert. Provide the full recipe details for: "${dish.name}" (${dish.cuisine}).
 Household size: ${householdSize}.
-Skill level: ${skillLevel}.
 
 INSTRUCTION GUIDELINES (MANDATORY):
 - Break instructions into logical sections (e.g., "Prep & Aromatics", "The Base", "Slow Simmer", "Finishing & Storage").

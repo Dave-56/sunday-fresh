@@ -7,7 +7,6 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   householdSize: 'two',
   cuisines: ['Nigerian / West African', 'Asian (Chinese, Japanese, Korean, Thai)'],
   restrictions: ['No dairy / lactose intolerant'],
-  skillLevel: 'Intermediate',
   prepTime: '2-3 hours',
   variety: 'Balanced — 70% familiar, 30% new',
   onboardingComplete: false,

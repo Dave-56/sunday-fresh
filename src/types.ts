@@ -26,7 +26,6 @@ export interface UserPreferences {
   householdSize: string;
   cuisines: string[];
   restrictions: string[];
-  skillLevel: string;
   prepTime: string;
   variety: string;
   onboardingComplete: boolean;

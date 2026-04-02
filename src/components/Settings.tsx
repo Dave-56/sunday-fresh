@@ -32,9 +32,9 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
   };
 
   return (
-    <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto pb-32">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans p-6 max-w-md mx-auto pb-32">
       <header className="flex justify-between items-center mb-12">
-        <button onClick={onBack} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
+        <button onClick={onBack} className="p-2 -ml-2 hover:bg-zinc-200 rounded-full transition-colors">
           <ArrowLeft size={20} />
         </button>
         <h2 className="text-[10px] font-bold uppercase tracking-widest opacity-40">Settings</h2>
@@ -51,7 +51,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 onClick={() => setSingle('householdSize', option)}
                 className={cn(
                   "p-4 rounded-xl border transition-all text-left text-sm font-medium leading-tight",
-                  prefs.householdSize === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                  prefs.householdSize === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 {option}
@@ -76,7 +76,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 onClick={() => toggleMulti('cuisines', option)}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex justify-between items-center gap-4",
-                  prefs.cuisines.includes(option) ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                  prefs.cuisines.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
@@ -104,33 +104,11 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 onClick={() => toggleMulti('restrictions', option)}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex justify-between items-center gap-4",
-                  prefs.restrictions.includes(option) ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                  prefs.restrictions.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
                 {prefs.restrictions.includes(option) && <Check size={16} className="shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-sm font-bold tracking-tight mb-4">Skill Level</h3>
-          <div className="space-y-2">
-            {[
-              'Beginner — simple recipes, minimal prep',
-              'Intermediate — comfortable in the kitchen',
-              'Advanced — bring on the complexity'
-            ].map(option => (
-              <button
-                key={option}
-                onClick={() => setSingle('skillLevel', option)}
-                className={cn(
-                  "w-full text-left p-4 rounded-xl border transition-all text-sm font-medium leading-tight",
-                  prefs.skillLevel === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
-                )}
-              >
-                {option}
               </button>
             ))}
           </div>
@@ -150,7 +128,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 onClick={() => setSingle('prepTime', option)}
                 className={cn(
                   "p-4 rounded-xl border transition-all text-left text-sm font-medium leading-tight",
-                  prefs.prepTime === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                  prefs.prepTime === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 {option}
@@ -172,7 +150,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 onClick={() => setSingle('variety', option)}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all text-sm font-medium leading-tight",
-                  prefs.variety === option ? "border-black bg-black text-white" : "border-black/5 bg-white"
+                  prefs.variety === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 {option}
@@ -182,10 +160,10 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
         </section>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
+      <div className="fixed bottom-0 left-0 right-0 p-6 bg-zinc-50 border-t border-zinc-200 max-w-md mx-auto z-50">
         <button
           onClick={() => onSave(prefs)}
-          className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10"
+          className="w-full py-4 bg-white border border-zinc-200 text-zinc-700 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
         >
           <Save size={18} />
           Save changes
