@@ -497,21 +497,21 @@ export default function App() {
 
         {/* Fixed bottom area with solid background to prevent interference */}
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
-          <div className="space-y-3">
+          <div className="flex gap-3">
             <button
               disabled={!selectedDish || loading}
               onClick={lockInDish}
-              className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight disabled:opacity-10 disabled:grayscale transition-all active:scale-95 shadow-lg shadow-black/10"
+              className="flex-1 py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight disabled:opacity-10 disabled:grayscale transition-all active:scale-95 shadow-lg shadow-black/10 whitespace-nowrap px-2"
             >
               Lock in this dish
             </button>
             <button
               onClick={fetchSuggestions}
               disabled={loading}
-              className="w-full py-4 border border-black/10 bg-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+              className="flex-1 py-4 border border-black/10 bg-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50 shadow-sm whitespace-nowrap px-2"
             >
-              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
-              Suggest different dishes
+              <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
+              <span className="truncate">Suggest different</span>
             </button>
           </div>
         </div>
