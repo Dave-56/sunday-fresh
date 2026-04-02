@@ -219,7 +219,7 @@ export default function App() {
 
   if (!hasApiKey) {
     return (
-      <div className="min-h-screen bg-[#f9f6f1] flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-[#fdfaf6] flex flex-col items-center justify-center p-6 text-center">
         <h1 className="text-3xl font-bold tracking-tighter mb-4">sunday.</h1>
         <p className="text-sm opacity-60 max-w-xs mb-8 leading-relaxed">
           To generate authentic, high-quality visuals for your heritage dishes, we need to use a specialized model.
@@ -265,7 +265,7 @@ export default function App() {
 
   if (view === 'history') {
     return (
-      <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto">
+      <div className="min-h-screen bg-[#fdfaf6] text-black font-sans p-6 max-w-md mx-auto">
         <header className="flex justify-between items-center mb-12">
           <button onClick={() => setView('home')} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
@@ -294,7 +294,7 @@ export default function App() {
   if (view === 'recipe' && (selectedDish || lockedDish)) {
     const dish = lockedDish || selectedDish!;
     return (
-      <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto">
+      <div className="min-h-screen bg-[#fdfaf6] text-black font-sans p-6 max-w-md mx-auto">
         <header className="flex justify-between items-center mb-8">
           <button onClick={() => setView('home')} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
@@ -375,7 +375,7 @@ export default function App() {
           )}
         </section>
 
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
           <button
             disabled={lockedDish?.name === dish.name}
             onClick={lockInDish}
@@ -400,7 +400,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f9f6f1] text-black font-sans p-6 max-w-md mx-auto selection:bg-black selection:text-white">
+    <div className="min-h-screen bg-[#fdfaf6] text-black font-sans p-6 max-w-md mx-auto selection:bg-black selection:text-white">
       <header className="flex justify-between items-start mb-16">
         <div>
           <h1 className="text-2xl font-bold tracking-tighter mb-1">sunday.</h1>
@@ -506,7 +506,7 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-y-3 mb-4">
-                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-[#f9f6f1] border border-black/5 rounded-md">
+                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-[#fdfaf6] border border-black/5 rounded-md">
                       {dish.cuisine}
                     </span>
                     <span className="text-[9px] font-bold uppercase tracking-widest opacity-30">
@@ -525,7 +525,7 @@ export default function App() {
         </div>
 
         {/* Fixed bottom area with solid background to prevent interference */}
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#f9f6f1] border-t border-black/5 max-w-md mx-auto z-50">
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
           <div className="flex gap-3">
             <button
               disabled={!selectedDish || loading || lockedDish?.name === selectedDish?.name}

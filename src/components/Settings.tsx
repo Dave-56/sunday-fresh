@@ -32,7 +32,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans p-6 max-w-md mx-auto pb-32">
+    <div className="min-h-screen bg-[#fdfaf6] text-zinc-900 font-sans p-6 max-w-md mx-auto pb-32">
       <header className="flex justify-between items-center mb-12">
         <button onClick={onBack} className="p-2 -ml-2 hover:bg-zinc-200 rounded-full transition-colors">
           <ArrowLeft size={20} />
@@ -160,7 +160,7 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
         </section>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-zinc-50 border-t border-zinc-200 max-w-md mx-auto z-50">
+      <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-zinc-200 max-w-md mx-auto z-50">
         <button
           onClick={() => onSave(prefs)}
           className="w-full py-4 bg-white border border-zinc-200 text-zinc-700 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"

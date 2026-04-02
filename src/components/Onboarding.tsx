@@ -236,7 +236,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-zinc-50 z-[100] flex flex-col max-w-md mx-auto overflow-hidden text-zinc-900">
+    <div className="fixed inset-0 bg-[#fdfaf6] z-[100] flex flex-col max-w-md mx-auto overflow-hidden text-zinc-900">
       {step > 0 && step < STEPS.length - 1 && (
         <div className="px-6 pt-8 pb-4">
           <div className="flex items-center justify-between mb-4">
@@ -272,7 +272,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       {step > 0 && step < STEPS.length - 1 && (
-        <div className="p-6 bg-zinc-50 border-t border-zinc-200">
+        <div className="p-6 bg-[#fdfaf6] border-t border-zinc-200">
           <button
             disabled={!isStepValid()}
             onClick={next}
