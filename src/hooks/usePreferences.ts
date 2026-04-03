@@ -10,6 +10,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   prepTime: '2-3 hours',
   variety: 'Balanced — 70% familiar, 30% new',
   onboardingComplete: false,
+  essentials: [],
+  selectedEssentialCategories: [],
 };
 
 export function usePreferences() {
@@ -19,7 +21,18 @@ export function usePreferences() {
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      setPreferences(JSON.parse(saved));
+      try {
+        const parsed = JSON.parse(saved);
+        setPreferences({
+          ...DEFAULT_PREFERENCES,
+          ...parsed,
+          // Ensure essentials is always an array even if missing in saved data
+          essentials: parsed.essentials || [],
+          selectedEssentialCategories: parsed.selectedEssentialCategories || [],
+        });
+      } catch (e) {
+        console.error('Failed to parse preferences', e);
+      }
     }
     setIsLoaded(true);
   }, []);

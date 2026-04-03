@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon, ShoppingBasket } from 'lucide-react';
 import { Dish, HistoryItem, UserPreferences } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI, Type } from "@google/genai";
 import Onboarding from './components/Onboarding';
 import Settings from './components/Settings';
+import Vault from './components/Vault';
 import { usePreferences } from './hooks/usePreferences';
 import { buildTeaserPrompt, buildDetailPrompt } from './lib/buildPrompt';
 
@@ -25,7 +26,7 @@ function cn(...inputs: ClassValue[]) {
 
 export default function App() {
   const { preferences, savePreferences, isLoaded } = usePreferences();
-  const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings'>('home');
+  const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings' | 'vault'>('home');
   const [options, setOptions] = useState<Dish[]>([]);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [loading, setLoading] = useState(false);
@@ -371,6 +372,16 @@ export default function App() {
     );
   }
 
+  if (view === 'vault') {
+    return (
+      <Vault 
+        preferences={preferences} 
+        onSave={savePreferences} 
+        onBack={() => setView('home')} 
+      />
+    );
+  }
+
   if (view === 'recipe' && (selectedDish || lockedDish)) {
     const dish = lockedDish || selectedDish!;
     return (
@@ -438,6 +449,21 @@ export default function App() {
                       </li>
                     ))}
                   </ul>
+
+                  {(preferences.essentials || []).length > 0 && (
+                    <div className="mb-12">
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Your Autopilot Essentials</h3>
+                      <ul className="space-y-4">
+                        {(preferences.essentials || []).map((item) => (
+                          <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
+                            <span className="opacity-80">{item.name}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-30">{item.quantity}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => setRecipeSubView('instructions')}
                     className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
@@ -506,7 +532,15 @@ export default function App() {
         </AnimatePresence>
 
         {recipeSubView === 'ingredients' && (
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50 flex flex-col gap-3">
+            {lockedDish?.name === dish.name && (
+              <button
+                onClick={() => window.open('https://www.instacart.com', '_blank')}
+                className="w-full py-4 bg-white border border-black text-black rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                Finish checkout on Instacart
+              </button>
+            )}
             <button
               disabled={lockedDish?.name === dish.name}
               onClick={lockInDish}
@@ -540,6 +574,13 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => setView('vault')}
+            className="p-2 rounded-full hover:bg-black/5 transition-colors"
+            title="Essentials Vault"
+          >
+            <ShoppingBasket size={20} className="opacity-40" />
+          </button>
+          <button 
             onClick={() => setView('history')}
             className="p-2 rounded-full hover:bg-black/5 transition-colors"
           >
@@ -555,6 +596,24 @@ export default function App() {
       </header>
 
       <main>
+        {preferences.essentials?.length === 0 && (
+          <button 
+            onClick={() => setView('vault')}
+            className="w-full mb-8 p-4 bg-orange-50 border border-orange-200 rounded-2xl flex items-center justify-between group active:scale-[0.98] transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
+                <ShoppingBasket size={16} />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-orange-900">Set up your weekly essentials</p>
+                <p className="text-[10px] text-orange-700 opacity-60">Save 10 mins on every grocery run</p>
+              </div>
+            </div>
+            <ChevronRight size={16} className="text-orange-400 group-hover:translate-x-1 transition-transform" />
+          </button>
+        )}
+
         {lockedDish ? (
           /* RITUAL DASHBOARD (Post-Lock) */
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -599,17 +658,25 @@ export default function App() {
               <h3 className="text-2xl font-bold tracking-tight mb-2">{lockedDish.name}</h3>
               <p className="text-sm opacity-50 leading-relaxed mb-8 line-clamp-2">{lockedDish.why}</p>
 
-              <button
-                onClick={() => {
-                  setSelectedDish(lockedDish);
-                  setRecipeSubView('ingredients');
-                  setView('recipe');
-                }}
-                className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
-              >
-                View recipe
-                <ChevronRight size={16} />
-              </button>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => {
+                    setSelectedDish(lockedDish);
+                    setRecipeSubView('ingredients');
+                    setView('recipe');
+                  }}
+                  className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
+                >
+                  View recipe
+                  <ChevronRight size={16} />
+                </button>
+                <button
+                  onClick={() => window.open('https://www.instacart.com', '_blank')}
+                  className="w-full py-4 bg-white border border-black text-black rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  Finish checkout on Instacart
+                </button>
+              </div>
             </div>
 
             <div className="text-center">

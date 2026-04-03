@@ -27,6 +27,13 @@ export interface HistoryItem {
   date: string;
 }
 
+export interface EssentialItem {
+  id: string;
+  name: string;
+  quantity: string;
+  category: 'Fruits & Veg' | 'Water' | 'Snacks' | 'Breakfast' | 'Dairy' | 'Pantry';
+}
+
 export interface UserPreferences {
   householdSize: string;
   cuisines: string[];
@@ -34,4 +41,6 @@ export interface UserPreferences {
   prepTime: string;
   variety: string;
   onboardingComplete: boolean;
+  essentials: EssentialItem[];
+  selectedEssentialCategories: string[];
 }
