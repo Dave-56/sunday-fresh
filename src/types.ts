@@ -1,6 +1,11 @@
+export interface RecipeStep {
+  text: string;
+  time?: string;
+}
+
 export interface RecipeSection {
   title: string;
-  steps: string[];
+  steps: RecipeStep[];
 }
 
 export interface Dish {

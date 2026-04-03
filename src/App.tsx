@@ -139,7 +139,7 @@ export default function App() {
         model: 'gemini-3.1-flash-image-preview',
         contents: {
           parts: [
-            { text: `An authentic, high-end food photograph of ${dish.name} (${dish.cuisine}). Traditional presentation, served in culturally appropriate serving ware (e.g., clay pots, wooden bowls, or heritage ceramics). Rich textures, steam rising, natural side-lighting. Avoid generic modern kitchen backgrounds; use warm, atmospheric, and culturally relevant settings. Focus on the soul and heritage of the dish. No people.` },
+            { text: `A professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a clean, minimalist background. Vibrant colors, natural bright lighting, macro textures showing fresh details. Served in a single elegant, modern ceramic bowl or plate. Minimalist styling, no clutter, no unnecessary props or background items. The food is the absolute hero. High-end culinary magazine style. No people.` },
           ],
         },
         config: {
@@ -186,7 +186,17 @@ export default function App() {
                   type: Type.OBJECT,
                   properties: {
                     title: { type: Type.STRING },
-                    steps: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    steps: { 
+                      type: Type.ARRAY, 
+                      items: { 
+                        type: Type.OBJECT,
+                        properties: {
+                          text: { type: Type.STRING },
+                          time: { type: Type.STRING },
+                        },
+                        required: ["text", "time"],
+                      } 
+                    },
                   },
                   required: ["title", "steps"],
                 },
@@ -405,7 +415,6 @@ export default function App() {
             <ul className="space-y-4">
               {dish.ingredients.map((ing, i) => (
                 <li key={i} className="flex items-start gap-3 text-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-black/10 mt-1.5 shrink-0" />
                   <span className="opacity-80">{ing}</span>
                 </li>
               ))}
@@ -434,7 +443,16 @@ export default function App() {
                         <span className="text-[10px] font-bold opacity-20 mt-0.5">
                           {String(dish.sections!.slice(0, sectionIdx).reduce((acc, s) => acc + s.steps.length, 0) + stepIdx + 1).padStart(2, '0')}
                         </span>
-                        <p className="text-sm leading-relaxed opacity-80">{step}</p>
+                        <div className="flex-1">
+                          <p className="text-sm leading-relaxed opacity-80 mb-1">
+                            {typeof step === 'string' ? step : step.text}
+                          </p>
+                          {typeof step !== 'string' && step.time && (
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-orange-600/60 flex items-center gap-1">
+                              <span className="text-[10px]">⏱️</span> {step.time}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -543,7 +561,7 @@ export default function App() {
                 }}
                 className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
               >
-                Start Cooking Ritual
+                View recipe
                 <ChevronRight size={16} />
               </button>
             </div>

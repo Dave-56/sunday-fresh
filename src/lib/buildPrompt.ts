@@ -39,12 +39,13 @@ INSTRUCTION GUIDELINES (MANDATORY):
 - Break instructions into logical sections (e.g., "Prep & Aromatics", "The Base", "Slow Simmer", "Finishing & Storage").
 - Each section must have a clear, evocative title.
 - Steps within sections must be EXTREMELY DETAILED and granular. Do not combine multiple major actions into one step.
+- Each step MUST include a "time" estimate (e.g., "5 mins", "15-20 mins", "Until fork-tender").
 - Provide 3-4 sections per recipe, with 3-4 steps per section.
 - Include specific techniques (e.g., "deglazing", "tempering spices", "reducing the base").
 - Mention visual cues (e.g., "until the oil separates", "until the aromatics are fragrant", "until the beef is fork-tender").
 - Explain the 'why' behind certain steps (e.g., "to remove the sourness of the tomatoes").
 
 Return:
-- ingredients: A list of ingredients scaled for the household size.
-- sections: The sectioned instructions as an array of objects with "title" and "steps".`;
+- ingredients: A list of ingredients scaled for the household size. Each ingredient MUST start with a relevant emoji (e.g., "🍅 2 Large Tomatoes, diced").
+- sections: The sectioned instructions as an array of objects with "title" and "steps" (each step is an object with "text" and "time").`;
 }
