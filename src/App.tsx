@@ -32,6 +32,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [lockedDish, setLockedDish] = useState<Dish | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+  const [recipeSubView, setRecipeSubView] = useState<'ingredients' | 'instructions'>('ingredients');
 
   const calculateStreak = () => {
     if (history.length === 0) return 0;
@@ -139,7 +140,7 @@ export default function App() {
         model: 'gemini-3.1-flash-image-preview',
         contents: {
           parts: [
-            { text: `A professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a clean, minimalist background. Vibrant colors, natural bright lighting, macro textures showing fresh details. Served in a single elegant, modern ceramic bowl or plate. Minimalist styling, no clutter, no unnecessary props or background items. The food is the absolute hero. High-end culinary magazine style. No people.` },
+            { text: `A museum-grade professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a perfectly clean, solid minimalist background. Vibrant colors, natural bright lighting, macro textures. Served in a single elegant, modern ceramic bowl or plate. STRICT MINIMALISM: No side garnishes, no lime wedges, no scattered herbs, no side piles of ingredients, no napkins, no cutlery. Only the main dish vessel and its contents. The food is the absolute hero. High-end culinary magazine style. No people.` },
           ],
         },
         config: {
@@ -375,7 +376,16 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#fdfaf6] text-black font-sans p-6 max-w-md mx-auto">
         <header className="flex justify-between items-center mb-8">
-          <button onClick={() => setView('home')} className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors">
+          <button 
+            onClick={() => {
+              if (recipeSubView === 'instructions') {
+                setRecipeSubView('ingredients');
+              } else {
+                setView('home');
+              }
+            }} 
+            className="p-2 -ml-2 hover:bg-black/5 rounded-full transition-colors"
+          >
             <ArrowLeft size={20} />
           </button>
           {lockedDish && (
@@ -404,83 +414,118 @@ export default function App() {
           </div>
         </div>
 
-        <section className="mb-12">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Ingredients</h3>
-          {!dish.ingredients ? (
-            <div className="flex items-center gap-3 opacity-30 py-4">
-              <Loader2 size={16} className="animate-spin" />
-              <p className="text-xs font-bold uppercase tracking-widest">Writing your grocery list...</p>
-            </div>
-          ) : (
-            <ul className="space-y-4">
-              {dish.ingredients.map((ing, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm">
-                  <span className="opacity-80">{ing}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="mb-24">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Instructions</h3>
-          {!dish.sections ? (
-            <div className="flex items-center gap-3 opacity-30 py-4">
-              <Loader2 size={16} className="animate-spin" />
-              <p className="text-xs font-bold uppercase tracking-widest">Perfecting the technique...</p>
-            </div>
-          ) : (
-            <div className="space-y-12">
-              {dish.sections.map((section, sectionIdx) => (
-                <div key={sectionIdx}>
-                  <h4 className="text-xs font-bold uppercase tracking-widest mb-6 opacity-60 flex items-center gap-2">
-                    <span className="w-1 h-1 rounded-full bg-black/20" />
-                    {section.title}
-                  </h4>
-                  <div className="space-y-8">
-                    {section.steps.map((step, stepIdx) => (
-                      <div key={stepIdx} className="flex gap-4">
-                        <span className="text-[10px] font-bold opacity-20 mt-0.5">
-                          {String(dish.sections!.slice(0, sectionIdx).reduce((acc, s) => acc + s.steps.length, 0) + stepIdx + 1).padStart(2, '0')}
-                        </span>
-                        <div className="flex-1">
-                          <p className="text-sm leading-relaxed opacity-80 mb-1">
-                            {typeof step === 'string' ? step : step.text}
-                          </p>
-                          {typeof step !== 'string' && step.time && (
-                            <span className="text-[9px] font-bold uppercase tracking-widest text-orange-600/60 flex items-center gap-1">
-                              <span className="text-[10px]">⏱️</span> {step.time}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        <AnimatePresence mode="wait">
+          {recipeSubView === 'ingredients' ? (
+            <motion.section 
+              key="ingredients"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="mb-12"
+            >
+              <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Ingredients</h3>
+              {!dish.ingredients ? (
+                <div className="flex items-center gap-3 opacity-30 py-4">
+                  <Loader2 size={16} className="animate-spin" />
+                  <p className="text-xs font-bold uppercase tracking-widest">Writing your grocery list...</p>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <>
+                  <ul className="space-y-4 mb-12">
+                    {dish.ingredients.map((ing, i) => (
+                      <li key={i} className="flex items-start gap-3 text-sm">
+                        <span className="opacity-80">{ing}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => setRecipeSubView('instructions')}
+                    className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
+                  >
+                    View Instructions
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
+            </motion.section>
+          ) : (
+            <motion.section 
+              key="instructions"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="mb-24"
+            >
+              <h3 className="text-[10px] font-bold uppercase tracking-widest mb-6 border-b border-black/5 pb-2 opacity-40">Instructions</h3>
+              {!dish.sections ? (
+                <div className="flex items-center gap-3 opacity-30 py-4">
+                  <Loader2 size={16} className="animate-spin" />
+                  <p className="text-xs font-bold uppercase tracking-widest">Perfecting the technique...</p>
+                </div>
+              ) : (
+                <div className="space-y-12">
+                  {dish.sections.map((section, sectionIdx) => (
+                    <div key={sectionIdx}>
+                      <h4 className="text-xs font-bold uppercase tracking-widest mb-6 opacity-60 flex items-center gap-2">
+                        <span className="w-1 h-1 rounded-full bg-black/20" />
+                        {section.title}
+                      </h4>
+                      <div className="space-y-8">
+                        {section.steps.map((step, stepIdx) => (
+                          <div key={stepIdx} className="flex gap-4">
+                            <span className="text-[10px] font-bold opacity-20 mt-0.5">
+                              {String(dish.sections!.slice(0, sectionIdx).reduce((acc, s) => acc + s.steps.length, 0) + stepIdx + 1).padStart(2, '0')}
+                            </span>
+                            <div className="flex-1">
+                              <p className="text-sm leading-relaxed opacity-80 mb-1">
+                                {typeof step === 'string' ? step : step.text}
+                              </p>
+                              {typeof step !== 'string' && step.time && (
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-orange-600/60 flex items-center gap-1">
+                                  <span className="text-[10px]">⏱️</span> {step.time}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <button
+                    onClick={() => setRecipeSubView('ingredients')}
+                    className="w-full py-4 border border-black/10 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  >
+                    <ArrowLeft size={16} />
+                    Back to Ingredients
+                  </button>
+                </div>
+              )}
+            </motion.section>
           )}
-        </section>
+        </AnimatePresence>
 
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
-          <button
-            disabled={lockedDish?.name === dish.name}
-            onClick={lockInDish}
-            className={cn(
-              "w-full py-4 rounded-xl font-bold text-sm tracking-tight transition-all active:scale-95 shadow-lg shadow-black/10 flex items-center justify-center gap-2",
-              lockedDish?.name === dish.name 
-                ? "bg-white border border-black/10 text-black/40" 
-                : "bg-black text-white"
-            )}
-          >
-            {lockedDish?.name === dish.name ? (
-              <>
-                <Check size={16} />
-                <span>Locked for this week</span>
-              </>
-            ) : 'Lock in this dish'}
-          </button>
-        </div>
+        {recipeSubView === 'ingredients' && (
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
+            <button
+              disabled={lockedDish?.name === dish.name}
+              onClick={lockInDish}
+              className={cn(
+                "w-full py-4 rounded-xl font-bold text-sm tracking-tight transition-all active:scale-95 shadow-lg shadow-black/10 flex items-center justify-center gap-2",
+                lockedDish?.name === dish.name 
+                  ? "bg-white border border-black/10 text-black/40" 
+                  : "bg-black text-white"
+              )}
+            >
+              {lockedDish?.name === dish.name ? (
+                <>
+                  <Check size={16} />
+                  <span>Locked for this week</span>
+                </>
+              ) : 'Lock in this dish'}
+            </button>
+          </div>
+        )}
         <div className="h-12" />
       </div>
     );
@@ -557,6 +602,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setSelectedDish(lockedDish);
+                  setRecipeSubView('ingredients');
                   setView('recipe');
                 }}
                 className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
@@ -611,6 +657,7 @@ export default function App() {
                       transition={{ delay: i * 0.1 }}
                       onClick={() => {
                         setSelectedDish(dish);
+                        setRecipeSubView('ingredients');
                         setView('recipe');
                       }}
                       className={cn(
