@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserPreferences } from '../types';
+import type { SyncPayload } from '../lib/kvSchema';
 
 const STORAGE_KEY = 'sunday_preferences';
 
@@ -14,6 +15,17 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   selectedEssentialCategories: [],
   zipCode: '',
 };
+
+/** Fire-and-forget sync to Vercel KV (fails silently in local dev) */
+function syncToKV(payload: SyncPayload) {
+  fetch('/api/user/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    // Silent fail — KV sync is best-effort, localStorage is the source of truth
+  });
+}
 
 export function usePreferences() {
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
@@ -41,7 +53,8 @@ export function usePreferences() {
   const savePreferences = (newPrefs: UserPreferences) => {
     setPreferences(newPrefs);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+    syncToKV({ preferences: newPrefs });
   };
 
-  return { preferences, savePreferences, isLoaded };
+  return { preferences, savePreferences, isLoaded, syncToKV };
 }

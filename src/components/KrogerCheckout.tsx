@@ -11,6 +11,7 @@ import {
   CartItem,
 } from '../lib/kroger';
 import { Dish, EssentialItem } from '../types';
+import { cleanSearchTerm, getAllItems as collectItems } from '../lib/ingredients';
 
 interface KrogerCheckoutProps {
   dish: Dish | null;
@@ -43,36 +44,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
   }, []);
 
   // Collect all grocery items to map
-  const getAllItems = (): string[] => {
-    const items: string[] = [];
-    if (dish?.ingredients) {
-      dish.ingredients.forEach(ing => items.push(ing));
-    }
-    essentials.forEach(e => {
-      for (let i = 0; i < parseInt(e.quantity) || 1; i++) {
-        items.push(e.name);
-      }
-    });
-    return items;
-  };
-
-  // Strip emojis, quantities, and measurements to extract the core food item
-  const cleanSearchTerm = (ingredient: string): string => {
-    return ingredient
-      // Remove emojis and other unicode symbols
-      .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d]/gu, '')
-      // Remove leading quantities like "2", "1/2", "500g"
-      .replace(/^\s*\d+[\s/]*\d*\s*(g|kg|ml|l|cup|cups|tbsp|tsp|oz|lb|lbs|cloves?|pieces?|cans?|bunch|head|stalks?|slices?|pinch|large|medium|small)\s*/i, '')
-      // Remove trailing prep instructions after comma
-      .replace(/,.*$/, '')
-      // Remove parenthetical notes
-      .replace(/\(.*?\)/g, '')
-      // Remove "or" alternatives (keep first option)
-      .replace(/\s+or\s+.*/i, '')
-      // Remove extra whitespace
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
+  const getItems = () => collectItems(dish, essentials);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -110,7 +82,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
   const mapProducts = async (locationId: string) => {
     setLoading(true);
     setError('');
-    const items = getAllItems();
+    const items = getItems();
     setMappingProgress({ current: 0, total: items.length });
     const mapped: CartItem[] = [];
 
@@ -287,7 +259,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
             <div className="mb-6">
               <h2 className="text-2xl font-bold tracking-tight mb-2">{cartItems.length} items ready</h2>
               <p className="text-[11px] opacity-40">
-                Added to your QFC cart. Checkout at qfc.com.
+                Review and confirm, then checkout on QFC.
               </p>
             </div>
 

@@ -27,7 +27,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function App() {
-  const { preferences, savePreferences, isLoaded } = usePreferences();
+  const { preferences, savePreferences, isLoaded, syncToKV } = usePreferences();
   const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings' | 'vault' | 'kroger'>('home');
   const [krogerConnected, setKrogerConnected] = useState(isKrogerAuthenticated());
   const [options, setOptions] = useState<Dish[]>([]);
@@ -299,6 +299,7 @@ export default function App() {
     const newHistory = [newItem, ...history].slice(0, 8);
     setHistory(newHistory);
     localStorage.setItem('sunday_history', JSON.stringify(newHistory));
+    syncToKV({ history: newHistory });
     setLockedDish(selectedDish);
     setView('home');
   };

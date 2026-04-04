@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — sunday.</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #fdfaf6; color: #111; padding: 2rem; max-width: 640px; margin: 0 auto; line-height: 1.7; }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+    p, li { font-size: 0.95rem; margin-bottom: 0.75rem; opacity: 0.8; }
+    ul { padding-left: 1.5rem; }
+    a { color: #111; }
+    .updated { font-size: 0.8rem; opacity: 0.4; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: April 2026</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Meal preferences</strong> — cuisine, dietary restrictions, household size. Stored to generate personalized meal plans.</li>
+    <li><strong>Phone number</strong> — used solely to send weekly meal plan SMS/MMS via Twilio. Never shared with third parties.</li>
+    <li><strong>Kroger OAuth tokens</strong> — stored securely to add items to your Kroger cart on your behalf. We never store your Kroger password.</li>
+  </ul>
+
+  <h2>How we use it</h2>
+  <p>Your data is used exclusively to power the sunday. meal planning service: generating meals, sending notifications, and filling your grocery cart. We do not sell, rent, or share your personal information with any third parties for marketing purposes.</p>
+
+  <h2>Data storage</h2>
+  <p>Preferences and session tokens are stored in encrypted cloud storage (Upstash Redis via Vercel). Meal images are stored in Vercel Blob storage. Data is retained only as long as needed to provide the service.</p>
+
+  <h2>SMS/MMS messaging</h2>
+  <p>By providing your phone number, you consent to receive weekly meal plan messages via SMS/MMS. Message frequency: approximately 2-4 messages per week. Message and data rates may apply. Reply STOP at any time to opt out. Reply HELP for assistance.</p>
+
+  <h2>Third-party services</h2>
+  <ul>
+    <li><strong>Twilio</strong> — SMS/MMS delivery</li>
+    <li><strong>Google Gemini</strong> — AI meal generation and food photography</li>
+    <li><strong>Kroger API</strong> — Grocery product search and cart management</li>
+    <li><strong>Vercel</strong> — Hosting and data storage</li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p>Questions? Open an issue or reach out via the app.</p>
+
+  <p style="margin-top: 2rem;"><a href="/">Back to sunday.</a></p>
+</body>
+</html>
