@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
 import { put } from '@vercel/blob';
 import { Redis } from '@upstash/redis';
@@ -20,14 +21,18 @@ const redis = Redis.fromEnv();
  * 5. Store pending meals in Redis (24h TTL)
  * 6. Send MMS via Twilio
  */
-export async function GET(req: Request) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   // Verify cron secret in production
-  const authHeader = req.headers.get('authorization');
+  const authHeader = req.headers.authorization;
   if (
     process.env.CRON_SECRET &&
     authHeader !== `Bearer ${process.env.CRON_SECRET}`
   ) {
-    return new Response('Unauthorized', { status: 401 });
+    return res.status(401).send('Unauthorized');
   }
 
   try {
@@ -35,7 +40,7 @@ export async function GET(req: Request) {
     const preferences = await redis.get<KVPreferences>(KV_KEYS.preferences);
     if (!preferences) {
       console.error('No preferences found in Redis — user must sync first');
-      return Response.json({ error: 'No preferences' }, { status: 400 });
+      return res.status(400).json({ error: 'No preferences' });
     }
 
     const history = (await redis.get<KVHistory>(KV_KEYS.history)) || [];
@@ -129,7 +134,7 @@ export async function GET(req: Request) {
     const validImageUrls = imageUrls.filter((u) => u.length > 0);
     await sendMealOptions(dishes, validImageUrls);
 
-    return Response.json({
+    return res.json({
       ok: true,
       dishes: dishes.map((d) => d.name),
       images: validImageUrls.length,
@@ -144,6 +149,6 @@ export async function GET(req: Request) {
     } catch (smsErr) {
       console.error('Failed to send error SMS:', smsErr);
     }
-    return Response.json({ error: err.message }, { status: 500 });
+    return res.status(500).json({ error: err.message });
   }
 }

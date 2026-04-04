@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
 import {
   krogerBasicAuth,
@@ -11,10 +12,9 @@ import { KV_TTL } from '../../_lib/kvSchema';
 
 const redis = Redis.fromEnv();
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const code = searchParams.get('code');
-  if (!code) return new Response('Missing authorization code', { status: 400 });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const code = req.query.code as string;
+  if (!code) return res.status(400).send('Missing authorization code');
 
   try {
     const tokenRes = await fetch(`${KROGER_AUTH_URL}/token`, {
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
     if (!tokenRes.ok) {
       const text = await tokenRes.text();
-      return new Response(`Token exchange failed: ${text}`, { status: tokenRes.status });
+      return res.status(tokenRes.status).send(`Token exchange failed: ${text}`);
     }
 
     const data = await tokenRes.json();
@@ -50,8 +50,8 @@ export async function GET(req: Request) {
     });
 
     const appUrl = process.env.APP_URL || '';
-    return Response.redirect(`${appUrl}/?kroger_session=${sessionId}`);
+    return res.redirect(`${appUrl}/?kroger_session=${sessionId}`);
   } catch (err: any) {
-    return new Response(`OAuth error: ${err.message}`, { status: 500 });
+    return res.status(500).send(`OAuth error: ${err.message}`);
   }
 }

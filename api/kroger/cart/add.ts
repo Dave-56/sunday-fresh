@@ -1,13 +1,17 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getUserToken, KROGER_API_BASE } from '../../_lib/krogerServer';
 
-export async function POST(req: Request) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'PUT' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get('session');
-    if (!sessionId) return Response.json({ error: 'Missing session' }, { status: 401 });
+    const sessionId = req.query.session as string;
+    if (!sessionId) return res.status(401).json({ error: 'Missing session' });
 
     const token = await getUserToken(sessionId);
-    const { items } = await req.json(); // [{ upc: string, quantity: number }]
+    const { items } = req.body; // [{ upc: string, quantity: number }]
 
     const apiRes = await fetch(`${KROGER_API_BASE}/cart/add`, {
       method: 'PUT',
@@ -21,11 +25,11 @@ export async function POST(req: Request) {
 
     if (!apiRes.ok) {
       const text = await apiRes.text();
-      return Response.json({ error: text }, { status: apiRes.status });
+      return res.status(apiRes.status).json({ error: text });
     }
 
-    return Response.json({ success: true });
+    return res.json({ success: true });
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return res.status(500).json({ error: err.message });
   }
 }

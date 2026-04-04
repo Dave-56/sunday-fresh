@@ -1,10 +1,10 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getUserSession } from '../../_lib/krogerServer';
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const sessionId = searchParams.get('session');
-  if (!sessionId) return Response.json({ authenticated: false });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const sessionId = req.query.session as string;
+  if (!sessionId) return res.json({ authenticated: false });
 
   const session = await getUserSession(sessionId);
-  return Response.json({ authenticated: !!session });
+  return res.json({ authenticated: !!session });
 }

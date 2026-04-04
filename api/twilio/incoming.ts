@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Redis } from '@upstash/redis';
 import { KV_KEYS } from '../_lib/kvSchema';
@@ -9,7 +10,6 @@ import {
   getClientToken,
   getUserToken,
   KROGER_API_BASE,
-  redis as krogerRedis,
 } from '../_lib/krogerServer';
 
 const redis = Redis.fromEnv();
@@ -19,41 +19,43 @@ const redis = Redis.fromEnv();
  * Twilio webhook — receives SMS replies and processes meal selection.
  *
  * Flow:
- *   User texts "2" → pick dish #2 → generate details → map to Kroger → fill cart → confirm SMS
+ *   User texts "2" -> pick dish #2 -> generate details -> map to Kroger -> fill cart -> confirm SMS
  */
-export async function POST(req: Request) {
-  try {
-    // Parse Twilio's URL-encoded webhook body
-    const formData = await req.formData();
-    const body = formData.get('Body') as string;
-    const from = formData.get('From') as string;
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method not allowed');
+  }
 
-    const selection = parseReply(body || '');
+  try {
+    const body = (req.body?.Body as string) || '';
+    const from = (req.body?.From as string) || '';
+
+    const selection = parseReply(body);
 
     // Load pending meals
     const pending = await redis.get<KVPendingMeals>(KV_KEYS.pendingMeals);
 
     if (!pending) {
       await sendError('No pending meals — open the app or wait for next Sunday.');
-      return twimlResponse();
+      return twimlResponse(res);
     }
 
     if (selection === null) {
       await sendError('Reply 1, 2, or 3 to pick a meal.');
-      return twimlResponse();
+      return twimlResponse(res);
     }
 
     const dish = pending.dishes[selection - 1];
     if (!dish) {
       await sendError('Invalid selection. Reply 1, 2, or 3.');
-      return twimlResponse();
+      return twimlResponse(res);
     }
 
     // Load preferences for detail prompt
     const preferences = await redis.get<KVPreferences>(KV_KEYS.preferences);
     if (!preferences) {
       await sendError("Preferences not found — open the app to set up first.");
-      return twimlResponse();
+      return twimlResponse(res);
     }
 
     // Generate full recipe details
@@ -166,9 +168,6 @@ export async function POST(req: Request) {
 
     // Add items to Kroger cart
     if (cartItems.length > 0) {
-      // Use the stored Kroger session from Redis
-      // The session key format is user:kroger_session:{sessionId}
-      // For MVP single-user, we look for any active session
       const krogerSessionId = await redis.get<string>('user:kroger_session_id');
 
       if (krogerSessionId) {
@@ -190,20 +189,20 @@ export async function POST(req: Request) {
             await sendError(
               `Mapped ${cartItems.length} items but couldn't add to cart — Kroger session may have expired. Re-login in the app.`
             );
-            return twimlResponse();
+            return twimlResponse(res);
           }
         } catch (err: any) {
           console.error('Kroger cart error:', err);
           await sendError(
             'Kroger session expired — re-login in the app, then reply again.'
           );
-          return twimlResponse();
+          return twimlResponse(res);
         }
       } else {
         await sendError(
           `Mapped ${cartItems.length} items but no Kroger session found. Log in via the app first.`
         );
-        return twimlResponse();
+        return twimlResponse(res);
       }
     }
 
@@ -213,20 +212,18 @@ export async function POST(req: Request) {
     // Send confirmation
     await sendCartReady(cartItems.length);
 
-    return twimlResponse();
+    return twimlResponse(res);
   } catch (err: any) {
     console.error('Twilio incoming error:', err);
     try {
       await sendError('Something went wrong filling your cart — open the app.');
     } catch (_) {}
-    return twimlResponse();
+    return twimlResponse(res);
   }
 }
 
 /** Return empty TwiML so Twilio doesn't retry */
-function twimlResponse() {
-  return new Response(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    { headers: { 'Content-Type': 'text/xml' } }
-  );
+function twimlResponse(res: VercelResponse) {
+  res.setHeader('Content-Type', 'text/xml');
+  return res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }

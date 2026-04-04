@@ -1,11 +1,11 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getClientToken, KROGER_API_BASE } from '../../_lib/krogerServer';
 
-export async function GET(req: Request) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { searchParams } = new URL(req.url);
-    const term = searchParams.get('term') || '';
-    const locationId = searchParams.get('locationId');
-    const limit = searchParams.get('limit') || '5';
+    const term = (req.query.term as string) || '';
+    const locationId = req.query.locationId as string;
+    const limit = (req.query.limit as string) || '5';
 
     const token = await getClientToken();
     let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=${limit}`;
@@ -17,12 +17,12 @@ export async function GET(req: Request) {
 
     if (!apiRes.ok) {
       const text = await apiRes.text();
-      return Response.json({ error: text }, { status: apiRes.status });
+      return res.status(apiRes.status).json({ error: text });
     }
 
     const data = await apiRes.json();
-    return Response.json(data);
+    return res.json(data);
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return res.status(500).json({ error: err.message });
   }
 }

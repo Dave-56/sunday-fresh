@@ -1,10 +1,10 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getUserToken, KROGER_API_BASE } from '../_lib/krogerServer';
 
-export async function GET(req: Request) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get('session');
-    if (!sessionId) return Response.json({ error: 'Missing session' }, { status: 401 });
+    const sessionId = req.query.session as string;
+    if (!sessionId) return res.status(401).json({ error: 'Missing session' });
 
     const token = await getUserToken(sessionId);
     const apiRes = await fetch(`${KROGER_API_BASE}/identity/profile`, {
@@ -13,12 +13,12 @@ export async function GET(req: Request) {
 
     if (!apiRes.ok) {
       const text = await apiRes.text();
-      return Response.json({ error: text }, { status: apiRes.status });
+      return res.status(apiRes.status).json({ error: text });
     }
 
     const data = await apiRes.json();
-    return Response.json(data);
+    return res.json(data);
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return res.status(500).json({ error: err.message });
   }
 }

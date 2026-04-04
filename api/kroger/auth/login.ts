@@ -1,6 +1,7 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { krogerRedirectUri, KROGER_AUTH_URL } from '../../_lib/krogerServer';
 
-export async function GET() {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   const scopes = 'cart.basic:write product.compact profile.compact';
   const authorizeUrl =
     `${KROGER_AUTH_URL}/authorize?` +
@@ -9,5 +10,5 @@ export async function GET() {
     `&client_id=${encodeURIComponent(process.env.KROGER_CLIENT_ID || '')}` +
     `&redirect_uri=${encodeURIComponent(krogerRedirectUri())}`;
 
-  return Response.json({ url: authorizeUrl });
+  return res.json({ url: authorizeUrl });
 }
