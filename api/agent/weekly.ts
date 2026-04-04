@@ -1,11 +1,11 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { put } from '@vercel/blob';
 import { Redis } from '@upstash/redis';
-import { KV_KEYS, KV_TTL } from '../../src/lib/kvSchema';
-import type { KVPreferences, KVHistory, KVPendingMeals } from '../../src/lib/kvSchema';
-import { buildTeaserPrompt } from '../../src/lib/buildPrompt';
-import { sendMealOptions, sendError } from '../../src/lib/twilio';
-import type { Dish } from '../../src/types';
+import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
+import type { KVPreferences, KVHistory, KVPendingMeals } from '../_lib/kvSchema';
+import { buildTeaserPrompt } from '../_lib/buildPrompt';
+import { sendMealOptions, sendError } from '../_lib/twilio';
+import type { Dish } from '../_lib/types';
 
 const redis = Redis.fromEnv();
 

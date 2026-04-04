@@ -1,4 +1,4 @@
-import { getUserSession } from '../../../src/lib/krogerServer';
+import { getUserSession } from '../../_lib/krogerServer';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

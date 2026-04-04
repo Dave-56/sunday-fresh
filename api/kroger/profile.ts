@@ -1,4 +1,4 @@
-import { getUserToken, KROGER_API_BASE } from '../../src/lib/krogerServer';
+import { getUserToken, KROGER_API_BASE } from '../_lib/krogerServer';
 
 export async function GET(req: Request) {
   try {

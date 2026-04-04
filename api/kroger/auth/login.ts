@@ -1,4 +1,4 @@
-import { krogerRedirectUri, KROGER_AUTH_URL } from '../../../src/lib/krogerServer';
+import { krogerRedirectUri, KROGER_AUTH_URL } from '../../_lib/krogerServer';
 
 export async function GET() {
   const scopes = 'cart.basic:write product.compact profile.compact';

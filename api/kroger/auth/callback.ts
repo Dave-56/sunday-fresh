@@ -4,8 +4,8 @@ import {
   generateSessionId,
   setUserSession,
   KROGER_AUTH_URL,
-} from '../../../src/lib/krogerServer';
-import type { KVKrogerSession } from '../../../src/lib/kvSchema';
+} from '../../_lib/krogerServer';
+import type { KVKrogerSession } from '../../_lib/kvSchema';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

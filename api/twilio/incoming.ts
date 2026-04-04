@@ -1,16 +1,16 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { Redis } from '@upstash/redis';
-import { KV_KEYS } from '../../src/lib/kvSchema';
-import type { KVPreferences, KVPendingMeals } from '../../src/lib/kvSchema';
-import { buildDetailPrompt } from '../../src/lib/buildPrompt';
-import { cleanSearchTerm } from '../../src/lib/ingredients';
-import { parseReply, sendCartReady, sendError } from '../../src/lib/twilio';
+import { KV_KEYS } from '../_lib/kvSchema';
+import type { KVPreferences, KVPendingMeals } from '../_lib/kvSchema';
+import { buildDetailPrompt } from '../_lib/buildPrompt';
+import { cleanSearchTerm } from '../_lib/ingredients';
+import { parseReply, sendCartReady, sendError } from '../_lib/twilio';
 import {
   getClientToken,
   getUserToken,
   KROGER_API_BASE,
   redis as krogerRedis,
-} from '../../src/lib/krogerServer';
+} from '../_lib/krogerServer';
 
 const redis = Redis.fromEnv();
 

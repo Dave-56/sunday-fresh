@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import { KV_KEYS, KV_TTL } from '../../src/lib/kvSchema';
-import type { SyncPayload } from '../../src/lib/kvSchema';
+import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
+import type { SyncPayload } from '../_lib/kvSchema';
 
 const redis = Redis.fromEnv();
 
