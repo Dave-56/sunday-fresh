@@ -2,11 +2,15 @@
   "framework": null,
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "api/_lib/**"
+    }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/agent/weekly", "schedule": "0 14 * * 0" }
+    { "path": "/api/agent/weekly", "schedule": "0 15 * * 0" }
   ]
 }

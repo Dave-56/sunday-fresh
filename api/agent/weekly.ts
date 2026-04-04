@@ -11,7 +11,7 @@ const redis = Redis.fromEnv();
 
 /**
  * GET /api/agent/weekly
- * Triggered by Vercel Cron every Sunday at 14:00 UTC (8am CT).
+ * Triggered by Vercel Cron every Sunday at 15:00 UTC (8am PT).
  *
  * 1. Load preferences + history from Redis
  * 2. Generate 3 meal teasers via Gemini

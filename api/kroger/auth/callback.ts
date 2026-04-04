@@ -1,3 +1,4 @@
+import { Redis } from '@upstash/redis';
 import {
   krogerBasicAuth,
   krogerRedirectUri,
@@ -6,6 +7,9 @@ import {
   KROGER_AUTH_URL,
 } from '../../_lib/krogerServer';
 import type { KVKrogerSession } from '../../_lib/kvSchema';
+import { KV_TTL } from '../../_lib/kvSchema';
+
+const redis = Redis.fromEnv();
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -39,6 +43,11 @@ export async function GET(req: Request) {
     };
 
     await setUserSession(sessionId, session);
+
+    // Store the session ID so the agent (twilio/incoming) can find it
+    await redis.set('user:kroger_session_id', sessionId, {
+      ex: KV_TTL.krogerSession,
+    });
 
     const appUrl = process.env.APP_URL || '';
     return Response.redirect(`${appUrl}/?kroger_session=${sessionId}`);
