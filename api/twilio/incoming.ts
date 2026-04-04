@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
-import { Redis } from '@upstash/redis';
+import { redis } from '../_lib/redis';
 import { KV_KEYS } from '../_lib/kvSchema';
 import type { KVPreferences, KVPendingMeals } from '../_lib/kvSchema';
 import { buildDetailPrompt } from '../_lib/buildPrompt';
@@ -11,8 +11,6 @@ import {
   getUserToken,
   KROGER_API_BASE,
 } from '../_lib/krogerServer';
-
-const redis = Redis.fromEnv();
 
 /**
  * POST /api/twilio/incoming

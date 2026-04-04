@@ -1,14 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
 import { put } from '@vercel/blob';
-import { Redis } from '@upstash/redis';
+import { redis } from '../_lib/redis';
 import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
 import type { KVPreferences, KVHistory, KVPendingMeals } from '../_lib/kvSchema';
 import { buildTeaserPrompt } from '../_lib/buildPrompt';
 import { sendMealOptions, sendError } from '../_lib/twilio';
 import type { Dish } from '../_lib/types';
-
-const redis = Redis.fromEnv();
 
 /**
  * GET /api/agent/weekly

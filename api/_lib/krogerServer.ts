@@ -1,8 +1,6 @@
-import { Redis } from '@upstash/redis';
+import { redis } from './redis';
 import { KV_KEYS, KV_TTL } from './kvSchema';
 import type { KVKrogerSession } from './kvSchema';
-
-const redis = Redis.fromEnv(); // Uses UPSTASH_REDIS_REST_URL & UPSTASH_REDIS_REST_TOKEN
 
 // ---------------------------------------------------------------------------
 // Constants

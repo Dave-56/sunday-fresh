@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Redis } from '@upstash/redis';
+import { redis } from '../../_lib/redis';
 import {
   krogerBasicAuth,
   krogerRedirectUri,
@@ -9,8 +9,6 @@ import {
 } from '../../_lib/krogerServer';
 import type { KVKrogerSession } from '../../_lib/kvSchema';
 import { KV_TTL } from '../../_lib/kvSchema';
-
-const redis = Redis.fromEnv();
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const code = req.query.code as string;

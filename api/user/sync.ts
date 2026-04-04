@@ -1,9 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Redis } from '@upstash/redis';
+import { redis } from '../_lib/redis';
 import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
 import type { SyncPayload } from '../_lib/kvSchema';
-
-const redis = Redis.fromEnv();
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
