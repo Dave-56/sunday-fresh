@@ -12,6 +12,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   onboardingComplete: false,
   essentials: [],
   selectedEssentialCategories: [],
+  zipCode: '',
 };
 
 export function usePreferences() {

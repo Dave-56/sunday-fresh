@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon, ShoppingBasket } from 'lucide-react';
+import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon, ShoppingBasket, ShoppingCart } from 'lucide-react';
 import { Dish, HistoryItem, UserPreferences } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -8,8 +8,10 @@ import { GoogleGenAI, Type } from "@google/genai";
 import Onboarding from './components/Onboarding';
 import Settings from './components/Settings';
 import Vault from './components/Vault';
+import KrogerCheckout from './components/KrogerCheckout';
 import { usePreferences } from './hooks/usePreferences';
 import { buildTeaserPrompt, buildDetailPrompt } from './lib/buildPrompt';
+import { setKrogerSession, isKrogerAuthenticated } from './lib/kroger';
 
 declare global {
   interface Window {
@@ -26,7 +28,8 @@ function cn(...inputs: ClassValue[]) {
 
 export default function App() {
   const { preferences, savePreferences, isLoaded } = usePreferences();
-  const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings' | 'vault'>('home');
+  const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings' | 'vault' | 'kroger'>('home');
+  const [krogerConnected, setKrogerConnected] = useState(isKrogerAuthenticated());
   const [options, setOptions] = useState<Dish[]>([]);
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [loading, setLoading] = useState(false);
@@ -95,6 +98,20 @@ export default function App() {
     }
     return dots;
   };
+
+  // Capture Kroger OAuth callback session from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const krogerSession = params.get('kroger_session');
+    if (krogerSession) {
+      setKrogerSession(krogerSession);
+      setKrogerConnected(true);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+      // Go straight to the Kroger checkout flow
+      setView('kroger');
+    }
+  }, []);
 
   useEffect(() => {
     const checkKey = async () => {
@@ -374,10 +391,21 @@ export default function App() {
 
   if (view === 'vault') {
     return (
-      <Vault 
-        preferences={preferences} 
-        onSave={savePreferences} 
-        onBack={() => setView('home')} 
+      <Vault
+        preferences={preferences}
+        onSave={savePreferences}
+        onBack={() => setView('home')}
+      />
+    );
+  }
+
+  if (view === 'kroger') {
+    return (
+      <KrogerCheckout
+        dish={lockedDish}
+        essentials={preferences.essentials || []}
+        savedZipCode={preferences.zipCode || ''}
+        onBack={() => setView('home')}
       />
     );
   }
@@ -534,12 +562,21 @@ export default function App() {
         {recipeSubView === 'ingredients' && (
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50 flex flex-col gap-3">
             {lockedDish?.name === dish.name && (
-              <button
-                onClick={() => window.open('https://www.instacart.com', '_blank')}
-                className="w-full py-4 bg-white border border-black text-black rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
-                Finish checkout on Instacart
-              </button>
+              <>
+                <button
+                  onClick={() => setView('kroger')}
+                  className="w-full py-4 bg-[#0068B5] text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                  <ShoppingCart size={16} />
+                  Add to QFC
+                </button>
+                <button
+                  onClick={() => window.open('https://www.instacart.com', '_blank')}
+                  className="w-full py-3 border border-black/10 text-black/60 rounded-xl font-bold text-[11px] tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  Or use Instacart
+                </button>
+              </>
             )}
             <button
               disabled={lockedDish?.name === dish.name}
@@ -671,10 +708,17 @@ export default function App() {
                   <ChevronRight size={16} />
                 </button>
                 <button
-                  onClick={() => window.open('https://www.instacart.com', '_blank')}
-                  className="w-full py-4 bg-white border border-black text-black rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  onClick={() => setView('kroger')}
+                  className="w-full py-4 bg-[#0068B5] text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
                 >
-                  Finish checkout on Instacart
+                  <ShoppingCart size={16} />
+                  Add to QFC
+                </button>
+                <button
+                  onClick={() => window.open('https://www.instacart.com', '_blank')}
+                  className="w-full py-3 border border-black/10 text-black/60 rounded-xl font-bold text-[11px] tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  Or use Instacart
                 </button>
               </div>
             </div>

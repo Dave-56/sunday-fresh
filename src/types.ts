@@ -43,4 +43,5 @@ export interface UserPreferences {
   onboardingComplete: boolean;
   essentials: EssentialItem[];
   selectedEssentialCategories: string[];
+  zipCode: string;
 }

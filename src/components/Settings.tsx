@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Check, Save } from 'lucide-react';
+import { ArrowLeft, Check, Save, MapPin } from 'lucide-react';
 import { UserPreferences } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -156,6 +156,21 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
                 {option}
               </button>
             ))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-bold tracking-tight mb-2">Zip Code</h3>
+          <p className="text-[11px] opacity-40 mb-4">For Kroger product availability.</p>
+          <div className="relative">
+            <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" />
+            <input
+              type="text"
+              value={prefs.zipCode || ''}
+              onChange={(e) => setPrefs(prev => ({ ...prev, zipCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))}
+              placeholder="e.g. 98101"
+              className="w-full pl-11 pr-4 py-4 bg-white border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-300"
+            />
           </div>
         </section>
       </div>

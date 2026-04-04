@@ -1,20 +1,11 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# sunday.
 
-# Run and deploy your AI Studio app
+Weekly meal planner for two. Pick a dish, lock it in, add ingredients to QFC.
 
-This contains everything you need to run your app locally.
+## Setup
 
-View your app in AI Studio: https://ai.studio/apps/e68d7a2a-b71e-4cb1-9ae5-ce0d97e04153
+1. `npm install`
+2. Copy `.env.example` to `.env` and fill in your keys
+3. `npm run dev`
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Opens at `http://localhost:3000`.
