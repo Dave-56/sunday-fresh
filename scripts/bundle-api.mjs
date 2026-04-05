@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readdir, stat, unlink } from 'node:fs/promises';
+import { readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 // Find all API endpoint .ts files, skipping _lib helpers
@@ -20,23 +20,25 @@ async function findEntryPoints(dir) {
 
 const entryPoints = await findEntryPoints('api');
 
-await build({
+// Bundle but don't write to disk yet — we need to overwrite .ts files in-place
+const result = await build({
   entryPoints,
   bundle: true,
   platform: 'node',
   target: 'node18',
   format: 'esm',
+  write: false,
   outdir: 'api',
   outbase: 'api',
-  allowOverwrite: true,
-  banner: { js: '// Bundled by esbuild' },
-  // Vercel provides @vercel/node at runtime; keep all npm deps external-free
-  // by bundling everything except Node.js built-ins
   packages: 'bundle',
 });
 
-// Remove .ts entry points so Vercel picks up the bundled .js files
-// (only affects the Vercel build environment, not local source)
-await Promise.all(entryPoints.map((f) => unlink(f)));
+// Overwrite each .ts source with its bundled JS output.
+// Vercel pre-scans for .ts files before the build runs, so they must still
+// exist. The content is now self-contained JS (valid TypeScript too).
+for (const file of result.outputFiles) {
+  const tsPath = file.path.replace(/\.js$/, '.ts');
+  await writeFile(tsPath, file.text);
+}
 
 console.log(`Bundled ${entryPoints.length} API functions`);
