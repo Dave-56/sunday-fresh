@@ -267,8 +267,9 @@ export default function App() {
                   type: Type.OBJECT,
                   properties: {
                     primary: { type: Type.STRING },
+                    alternatives: { type: Type.ARRAY, items: { type: Type.STRING } },
                   },
-                  required: ["primary"],
+                  required: ["primary", "alternatives"],
                 },
               },
               required: ["name", "cuisine", "why", "difficulty", "prepTime", "servings", "type", "servedWith"],
@@ -466,6 +467,19 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {dish.servedWith?.alternatives && dish.servedWith.alternatives.length > 0 && (
+          <div className="mb-12">
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-30 mb-3">Also pairs with</p>
+            <div className="flex flex-wrap gap-2">
+              {dish.servedWith.alternatives.map((alt: string, i: number) => (
+                <span key={i} className="text-xs opacity-50 bg-black/[0.03] border border-black/5 px-3 py-1.5 rounded-full">
+                  {alt}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <AnimatePresence mode="wait">
           {recipeSubView === 'ingredients' ? (

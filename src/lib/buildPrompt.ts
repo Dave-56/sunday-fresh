@@ -31,7 +31,7 @@ Return exactly 3 distinct dish options. For each dish, provide:
 - prepTime: Total time including prep
 - servings: Total portions
 - type: "Heritage" (for dishes 1 & 2) or "Explorer" (for dish 3)
-- servedWith: An object with a "primary" field — what this dish is traditionally served with (e.g., "Steamed jasmine rice", "Fufu or pounded yam", "Warm crusty bread"). Pick the single most authentic pairing.`;
+- servedWith: An object with a "primary" field — what this dish is traditionally served with (e.g., "Steamed jasmine rice", "Fufu or pounded yam", "Warm crusty bread"). Pick the single most authentic pairing. Also include an "alternatives" array with 2-3 other ways to enjoy this dish across the week (e.g., "Over steamed rice", "With boiled yam", "With garri (eba)"). Keep them short and practical for meal prep variety.`;
 }
 
 export function buildDetailPrompt(dish: any, preferences: UserPreferences): string {

@@ -23,12 +23,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({ items }),
     });
 
-    if (!apiRes.ok) {
-      const text = await apiRes.text();
-      return res.status(apiRes.status).json({ error: text });
+    // Log response structure for investigation (not raw payload)
+    let cartResponse: unknown = null;
+    try {
+      cartResponse = await apiRes.json();
+      const keys = cartResponse && typeof cartResponse === 'object'
+        ? Object.keys(cartResponse)
+        : [];
+      console.log('Kroger cart response:', {
+        status: apiRes.status,
+        itemsSubmitted: items?.length,
+        responseKeys: keys,
+      });
+    } catch {
+      console.log('Kroger cart response:', { status: apiRes.status, itemsSubmitted: items?.length });
     }
 
-    return res.json({ success: true });
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({ error: 'Cart add failed', status: apiRes.status });
+    }
+
+    return res.json({ success: true, itemCount: items?.length });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

@@ -4,46 +4,33 @@ import { KV_KEYS } from './kvSchema.js';
 import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
 import { buildDetailPrompt } from './buildPrompt.js';
 import { cleanSearchTerm } from './ingredients.js';
-import { getClientToken, getUserToken, KROGER_API_BASE } from './krogerServer.js';
+import {
+  getClientToken,
+  getUserToken,
+  deleteUserSession,
+  KROGER_API_BASE,
+} from './krogerServer.js';
+import type { Dish } from './types.js';
 
-export type SelectionResult =
-  | { ok: true; itemCount: number }
+// ---------------------------------------------------------------------------
+// Result types
+// ---------------------------------------------------------------------------
+export type FillCartResult =
+  | { ok: true; itemCount: number; cartResponse: unknown }
   | { ok: false; error: string };
 
-/**
- * Handle a meal selection (1, 2, or 3):
- *  1. Load pending meals from Redis
- *  2. Validate selection
- *  3. Generate recipe details via Gemini
- *  4. Map ingredients to Kroger products
- *  5. Add to Kroger cart
- *  6. Clear pending meals
- */
-export async function handleMealSelection(
-  selection: number | null
-): Promise<SelectionResult> {
-  // Load pending meals
-  const pending = await redis.get<KVPendingMeals>(KV_KEYS.pendingMeals);
+export type SelectionResult =
+  | { ok: true; itemCount: number; cartResponse: unknown }
+  | { ok: false; error: string; needsAuth?: boolean; selection?: number; dish?: Dish };
 
-  if (!pending) {
-    return { ok: false, error: 'No pending meals — open the app or wait for next Sunday.' };
-  }
-
-  if (selection === null || selection < 1 || selection > 3) {
-    return { ok: false, error: 'Reply 1, 2, or 3 to pick a meal.' };
-  }
-
-  const dish = pending.dishes[selection - 1];
-  if (!dish) {
-    return { ok: false, error: 'Invalid selection. Reply 1, 2, or 3.' };
-  }
-
-  // Load preferences for detail prompt
-  const preferences = await redis.get<KVPreferences>(KV_KEYS.preferences);
-  if (!preferences) {
-    return { ok: false, error: "Preferences not found — open the app to set up first." };
-  }
-
+// ---------------------------------------------------------------------------
+// fillCart — reusable by both handleMealSelection and callback.ts auto-fill
+// ---------------------------------------------------------------------------
+export async function fillCart(
+  dish: Dish,
+  preferences: KVPreferences,
+  userToken: string
+): Promise<FillCartResult> {
   // Generate full recipe details
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const detailPrompt = buildDetailPrompt(dish, preferences);
@@ -152,47 +139,118 @@ export async function handleMealSelection(
   }
 
   // Add items to Kroger cart
-  if (cartItems.length > 0) {
-    const krogerSessionId = await redis.get<string>('user:kroger_session_id');
-
-    if (krogerSessionId) {
-      try {
-        const userToken = await getUserToken(krogerSessionId);
-        const cartRes = await fetch(`${KROGER_API_BASE}/cart/add`, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${userToken}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({ items: cartItems }),
-        });
-
-        if (!cartRes.ok) {
-          const errText = await cartRes.text();
-          console.error('Cart add failed:', errText);
-          return {
-            ok: false,
-            error: `Mapped ${cartItems.length} items but couldn't add to cart — Kroger session may have expired. Re-login in the app.`,
-          };
-        }
-      } catch (err: any) {
-        console.error('Kroger cart error:', err);
-        return {
-          ok: false,
-          error: 'Kroger session expired — re-login in the app, then reply again.',
-        };
-      }
-    } else {
-      return {
-        ok: false,
-        error: `Mapped ${cartItems.length} items but no Kroger session found. Log in via the app first.`,
-      };
-    }
+  if (cartItems.length === 0) {
+    return { ok: false, error: 'No products found for this recipe.' };
   }
 
-  // Clear pending meals
-  await redis.del(KV_KEYS.pendingMeals);
+  try {
+    const cartRes = await fetch(`${KROGER_API_BASE}/cart/add`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ items: cartItems }),
+    });
 
-  return { ok: true, itemCount: cartItems.length };
+    // Log response structure for investigation (not raw payload)
+    let cartResponse: unknown = null;
+    try {
+      cartResponse = await cartRes.json();
+      const keys = cartResponse && typeof cartResponse === 'object'
+        ? Object.keys(cartResponse)
+        : [];
+      console.log('Kroger cart response:', {
+        status: cartRes.status,
+        itemsSubmitted: cartItems.length,
+        responseKeys: keys,
+      });
+    } catch {
+      // Response may not be JSON
+      console.log('Kroger cart response:', { status: cartRes.status, itemsSubmitted: cartItems.length });
+    }
+
+    if (!cartRes.ok) {
+      console.error('Cart add failed:', cartRes.status);
+      return {
+        ok: false,
+        error: `Mapped ${cartItems.length} items but couldn't add to cart (status ${cartRes.status}).`,
+      };
+    }
+
+    return { ok: true, itemCount: cartItems.length, cartResponse };
+  } catch (err: any) {
+    console.error('Kroger cart error:', err);
+    return { ok: false, error: 'Kroger cart request failed.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// handleMealSelection — orchestrates the full selection flow
+// ---------------------------------------------------------------------------
+export async function handleMealSelection(
+  selection: number | null
+): Promise<SelectionResult> {
+  // Load pending meals
+  const pending = await redis.get<KVPendingMeals>(KV_KEYS.pendingMeals);
+
+  if (!pending) {
+    return { ok: false, error: 'No pending meals — open the app or wait for next Sunday.' };
+  }
+
+  if (selection === null || selection < 1 || selection > 3) {
+    return { ok: false, error: 'Reply 1, 2, or 3 to pick a meal.' };
+  }
+
+  const dish = pending.dishes[selection - 1];
+  if (!dish) {
+    return { ok: false, error: 'Invalid selection. Reply 1, 2, or 3.' };
+  }
+
+  // Check Kroger session BEFORE Gemini call — avoid wasting API time
+  const krogerSessionId = await redis.get<string>(KV_KEYS.krogerSessionPointer);
+
+  if (!krogerSessionId) {
+    return {
+      ok: false,
+      error: 'No Kroger session found. Sign in to fill your cart.',
+      needsAuth: true,
+      selection,
+      dish,
+    };
+  }
+
+  // Validate actual session, not just the pointer
+  let userToken: string;
+  try {
+    userToken = await getUserToken(krogerSessionId);
+  } catch {
+    // Session is dead — clear both pointer and session to prevent stale-pointer loop
+    await redis.del(KV_KEYS.krogerSessionPointer);
+    await deleteUserSession(krogerSessionId);
+    return {
+      ok: false,
+      error: 'Kroger session expired. Sign in again to fill your cart.',
+      needsAuth: true,
+      selection,
+      dish,
+    };
+  }
+
+  // Load preferences for detail prompt
+  const preferences = await redis.get<KVPreferences>(KV_KEYS.preferences);
+  if (!preferences) {
+    return { ok: false, error: "Preferences not found — open the app to set up first." };
+  }
+
+  // Fill the cart
+  const result = await fillCart(dish, preferences, userToken);
+
+  if (result.ok) {
+    // Clear pending meals on success
+    await redis.del(KV_KEYS.pendingMeals);
+  }
+
+  return result;
 }

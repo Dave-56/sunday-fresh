@@ -1,6 +1,7 @@
+import { randomUUID } from 'crypto';
 import { redis } from './redis.js';
 import { KV_KEYS, KV_TTL } from './kvSchema.js';
-import type { KVKrogerSession } from './kvSchema.js';
+import type { KVKrogerSession, KVOAuthState } from './kvSchema.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -119,6 +120,39 @@ export async function getUserToken(sessionId: string): Promise<string> {
 
 export function generateSessionId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// ---------------------------------------------------------------------------
+// OAuth state management (CSRF + Telegram flow routing)
+// ---------------------------------------------------------------------------
+function oauthStateKey(nonce: string): string {
+  return `${KV_KEYS.oauthState}:${nonce}`;
+}
+
+export async function peekOAuthState(nonce: string): Promise<KVOAuthState | null> {
+  return redis.get<KVOAuthState>(oauthStateKey(nonce));
+}
+
+export async function buildOAuthUrl(state: KVOAuthState): Promise<string> {
+  const nonce = randomUUID();
+  await redis.set(oauthStateKey(nonce), state, { ex: KV_TTL.oauthState });
+
+  const scopes = 'cart.basic:write product.compact profile.compact';
+  return (
+    `${KROGER_AUTH_URL}/authorize?` +
+    `scope=${encodeURIComponent(scopes)}` +
+    `&response_type=code` +
+    `&client_id=${encodeURIComponent(env('KROGER_CLIENT_ID'))}` +
+    `&redirect_uri=${encodeURIComponent(krogerRedirectUri())}` +
+    `&state=${encodeURIComponent(nonce)}`
+  );
+}
+
+export async function consumeOAuthState(nonce: string): Promise<KVOAuthState | null> {
+  const key = oauthStateKey(nonce);
+  const state = await redis.get<KVOAuthState>(key);
+  if (state) await redis.del(key);
+  return state;
 }
 
 // ---------------------------------------------------------------------------

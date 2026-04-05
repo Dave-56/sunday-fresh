@@ -63,8 +63,9 @@ export async function generateAndSendMeals(): Promise<GenerateResult> {
               type: Type.OBJECT,
               properties: {
                 primary: { type: Type.STRING },
+                alternatives: { type: Type.ARRAY, items: { type: Type.STRING } },
               },
-              required: ['primary'],
+              required: ['primary', 'alternatives'],
             },
           },
           required: ['name', 'cuisine', 'why', 'difficulty', 'prepTime', 'servings', 'type', 'servedWith'],

@@ -6,16 +6,21 @@ import type { Dish, UserPreferences, HistoryItem } from '../types';
 export const KV_KEYS = {
   preferences: 'user:preferences',
   krogerSession: 'user:kroger_session',
+  krogerSessionPointer: 'user:kroger_session_id',
   history: 'user:history',
   pendingMeals: 'pending_meals',
+  oauthState: 'oauth:state',
+  selectionLock: 'selection_lock',
 } as const;
 
 // ---------------------------------------------------------------------------
 // TTLs (seconds)
 // ---------------------------------------------------------------------------
 export const KV_TTL = {
-  krogerSession: 86_400,   // 24h
-  pendingMeals: 86_400,    // 24h — expire if no reply
+  krogerSession: 2_592_000, // 30 days — aligned with refresh token lifetime
+  pendingMeals: 86_400,     // 24h — expire if no reply
+  oauthState: 600,           // 10 min — OAuth should complete quickly
+  selectionLock: 300,        // 5 min — prevents duplicate cart adds from webhook retries
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -31,6 +36,14 @@ export interface KVPendingMeals {
   dishes: Dish[];       // 3 teaser dishes
   imageUrls: string[];  // 3 Blob URLs
   timestamp: number;    // epoch ms — when generated
+  messageIds?: number[]; // Telegram message IDs for cleanup on regenerate
+}
+
+export interface KVOAuthState {
+  source: 'telegram' | 'web';
+  selection: number | null;
+  dish: Dish | null;
+  createdAt: number;
 }
 
 // Re-export types the agent will read from KV

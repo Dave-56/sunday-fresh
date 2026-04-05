@@ -121,6 +121,20 @@ export async function sendError(message: string): Promise<void> {
 }
 
 /**
+ * Send a sign-in button (inline keyboard with URL) for Kroger OAuth
+ */
+export async function sendSignInButton(oauthUrl: string): Promise<number> {
+  const res = await callApi('sendMessage', {
+    chat_id: chatId(),
+    text: 'sunday. — Sign in to QFC to fill your cart:',
+    reply_markup: {
+      inline_keyboard: [[{ text: 'Sign in to QFC', url: oauthUrl }]],
+    },
+  });
+  return res.result.message_id;
+}
+
+/**
  * Answer a callback query (removes the loading spinner on the button)
  */
 export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {

@@ -1,10 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { waitUntil } from '@vercel/functions';
 import { handleMealSelection } from '../_lib/handleMealSelection.js';
 import { generateAndSendMeals } from '../_lib/generateMeals.js';
-import { parseSelection, answerCallbackQuery, sendCartReady, sendError, deleteMessage, sendTextMessage } from '../_lib/telegram.js';
+import {
+  parseSelection,
+  answerCallbackQuery,
+  sendCartReady,
+  sendError,
+  sendSignInButton,
+  deleteMessage,
+  sendTextMessage,
+} from '../_lib/telegram.js';
 import { redis } from '../_lib/redis.js';
-import { KV_KEYS } from '../_lib/kvSchema.js';
+import { KV_KEYS, KV_TTL } from '../_lib/kvSchema.js';
 import type { KVPendingMeals } from '../_lib/kvSchema.js';
+import { buildOAuthUrl } from '../_lib/krogerServer.js';
+
+export const config = { maxDuration: 60 };
 
 /**
  * POST /api/telegram/incoming
@@ -87,20 +99,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     }
 
-    const result = await handleMealSelection(selection);
-
-    if (result.ok === true) {
-      await sendCartReady(result.itemCount);
-    } else {
-      await sendError(result.error);
+    // Idempotency lock — use Telegram's callback_query.id or update_id as dedup key
+    const dedupId = update.callback_query?.id || update.update_id;
+    const lockKey = `${KV_KEYS.selectionLock}:${dedupId}`;
+    const acquired = await redis.set(lockKey, '1', {
+      nx: true,
+      ex: KV_TTL.selectionLock,
+    });
+    if (!acquired) {
+      // Duplicate webhook — already processing this selection
+      return res.json({ ok: true });
     }
 
-    return res.json({ ok: true });
+    // Acknowledge webhook immediately, run cart fill in background
+    res.json({ ok: true });
+
+    waitUntil(
+      handleAndNotify(selection, lockKey)
+    );
   } catch (err: any) {
     console.error('Telegram incoming error:', err);
     try {
       await sendError('Something went wrong filling your cart — open the app.');
     } catch (_) {}
     return res.json({ ok: true });
+  }
+}
+
+async function handleAndNotify(
+  selection: number | null,
+  lockKey: string
+): Promise<void> {
+  try {
+    const result = await handleMealSelection(selection);
+
+    if (result.ok === true) {
+      await sendCartReady(result.itemCount);
+    } else if (result.needsAuth && result.dish && result.selection) {
+      // Release lock — no cart fill happened, user needs to auth first
+      await redis.del(lockKey);
+      const oauthUrl = await buildOAuthUrl({
+        source: 'telegram',
+        selection: result.selection,
+        dish: result.dish,
+        createdAt: Date.now(),
+      });
+      await sendSignInButton(oauthUrl);
+    } else {
+      // Release lock on non-fill failures so user can retry
+      await redis.del(lockKey);
+      await sendError(result.error);
+    }
+  } catch (err: any) {
+    console.error('handleAndNotify error:', err);
+    await redis.del(lockKey);
+    try {
+      await sendError('Something went wrong filling your cart — open the app.');
+    } catch (_) {}
   }
 }
