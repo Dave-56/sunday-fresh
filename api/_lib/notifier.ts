@@ -10,11 +10,12 @@ function channel(): 'telegram' | 'twilio' {
 export async function sendMealOptions(
   dishes: Dish[],
   imageUrls: string[]
-): Promise<void> {
+): Promise<number[]> {
   if (channel() === 'twilio') {
     await twilio.sendMealOptions(dishes, imageUrls);
+    return []; // Twilio doesn't return message IDs we track
   } else {
-    await telegram.sendMealOptions(dishes, imageUrls);
+    return telegram.sendMealOptions(dishes, imageUrls);
   }
 }
 

@@ -1,10 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleMealSelection } from '../_lib/handleMealSelection.js';
-import { parseSelection, answerCallbackQuery, sendCartReady, sendError } from '../_lib/telegram.js';
+import { generateAndSendMeals } from '../_lib/generateMeals.js';
+import { parseSelection, answerCallbackQuery, sendCartReady, sendError, deleteMessage, sendTextMessage } from '../_lib/telegram.js';
+import { redis } from '../_lib/redis.js';
+import { KV_KEYS } from '../_lib/kvSchema.js';
+import type { KVPendingMeals } from '../_lib/kvSchema.js';
 
 /**
  * POST /api/telegram/incoming
- * Telegram webhook — receives button taps and text replies, processes meal selection.
+ * Telegram webhook — receives button taps and text replies.
+ * Handles meal selection (pick:1/2/3) and regeneration.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -36,6 +41,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ ok: true });
     }
 
+    // --- Regenerate flow ---
+    if (selectionRaw === 'regenerate') {
+      // Answer callback immediately so button stops spinning
+      if (callbackQueryId) {
+        await answerCallbackQuery(callbackQueryId, 'Regenerating...');
+      }
+
+      // Spam guard: skip if last generation was < 60s ago
+      const pending = await redis.get<KVPendingMeals>(KV_KEYS.pendingMeals);
+      if (pending && Date.now() - pending.timestamp < 60_000) {
+        await sendTextMessage('Hold on — still processing the last batch!');
+        return res.json({ ok: true });
+      }
+
+      // Delete old messages from chat
+      if (pending?.messageIds) {
+        await Promise.all(pending.messageIds.map((id) => deleteMessage(id)));
+      }
+
+      // Let the user know it's working
+      const waitMsgId = await sendTextMessage('Generating new options...');
+
+      try {
+        await generateAndSendMeals();
+        // Clean up the "Generating..." message
+        await deleteMessage(waitMsgId);
+      } catch (err: any) {
+        console.error('Regenerate failed:', err);
+        await deleteMessage(waitMsgId);
+        await sendError("Couldn't regenerate meals — try again or open the app.");
+      }
+
+      return res.json({ ok: true });
+    }
+
+    // --- Meal selection flow ---
     const selection = parseSelection(selectionRaw);
 
     // Answer callback query immediately to remove loading spinner

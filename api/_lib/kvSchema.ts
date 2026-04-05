@@ -31,6 +31,7 @@ export interface KVPendingMeals {
   dishes: Dish[];       // 3 teaser dishes
   imageUrls: string[];  // 3 Blob URLs
   timestamp: number;    // epoch ms — when generated
+  messageIds?: number[]; // Telegram message IDs for cleanup on regenerate
 }
 
 // Re-export types the agent will read from KV

@@ -17,46 +17,86 @@ async function callApi(method: string, body: Record<string, unknown>) {
 }
 
 /**
- * Send meal option photos + inline keyboard buttons (1 / 2 / 3)
+ * Send meal option photos + inline keyboard buttons (1 / 2 / 3 + Regenerate).
+ * Returns the message IDs of all sent messages (for cleanup on regenerate).
  */
 export async function sendMealOptions(
   dishes: Dish[],
   imageUrls: string[]
-): Promise<void> {
+): Promise<number[]> {
+  const messageIds: number[] = [];
+  // Greeting
+  const greeting = `Hey David & Chika, here are some suggestions for meals this week:`;
+  const greetRes = await callApi('sendMessage', {
+    chat_id: chatId(),
+    text: greeting,
+  });
+  messageIds.push(greetRes.result.message_id);
+
   // Send each photo individually with its dish name
   for (let i = 0; i < dishes.length; i++) {
     const d = dishes[i];
     const url = imageUrls[i];
     const servedLine = d.servedWith?.primary ? `\nBest with: ${d.servedWith.primary}` : '';
     if (url) {
-      await callApi('sendPhoto', {
+      const photoRes = await callApi('sendPhoto', {
         chat_id: chatId(),
         photo: url,
         caption: `${i + 1}. ${d.name}\n${d.cuisine} — ${d.type}${servedLine}`,
       });
+      messageIds.push(photoRes.result.message_id);
     } else {
-      await callApi('sendMessage', {
+      const msgRes = await callApi('sendMessage', {
         chat_id: chatId(),
         text: `${i + 1}. ${d.name}\n${d.cuisine} — ${d.type}${servedLine}`,
       });
+      messageIds.push(msgRes.result.message_id);
     }
   }
 
-  // Send pick message with inline keyboard
-  const text = `sunday. — tap to pick your meal this week:`;
-
-  await callApi('sendMessage', {
+  // Send pick message with inline keyboard (meal buttons + regenerate)
+  const pickRes = await callApi('sendMessage', {
     chat_id: chatId(),
-    text,
+    text: `sunday. — tap to pick your meal this week:`,
     reply_markup: {
       inline_keyboard: [
         dishes.slice(0, 3).map((d, i) => ({
           text: `${i + 1}. ${d.name}`,
           callback_data: `pick:${i + 1}`,
         })),
+        [{ text: '🔄 Regenerate', callback_data: 'regenerate' }],
       ],
     },
   });
+  messageIds.push(pickRes.result.message_id);
+
+  return messageIds;
+}
+
+/**
+ * Delete a message by ID (used for cleanup on regenerate)
+ */
+export async function deleteMessage(messageId: number): Promise<void> {
+  try {
+    await callApi('deleteMessage', {
+      chat_id: chatId(),
+      message_id: messageId,
+    });
+  } catch (err) {
+    // Telegram may reject deleting old messages (>48h) — not critical
+    console.error(`Failed to delete message ${messageId}:`, err);
+  }
+}
+
+/**
+ * Send a simple text message, returns message ID
+ */
+export async function sendTextMessage(text: string): Promise<number> {
+  const res = await callApi('sendMessage', {
+    chat_id: chatId(),
+    text,
+  });
+  return res.result.message_id;
 }
 
 /**
