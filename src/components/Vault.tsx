@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Plus, Trash2, Check, Minus, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Check, Minus, Sparkles, X } from 'lucide-react';
 import { EssentialItem, UserPreferences } from '../types';
+
+const ALL_CATEGORIES = Object.keys({
+  'Fruits & Veg': 1, 'Beverages': 1, 'Snacks': 1, 'Breakfast': 1,
+  'Dairy': 1, 'Pantry': 1, 'Bread & Bakery': 1, 'Proteins': 1,
+  'Frozen': 1, 'Household': 1,
+}) as EssentialItem['category'][];
 
 interface VaultProps {
   preferences: UserPreferences;
@@ -17,10 +23,15 @@ const VIBES = [
 
 const CATEGORY_NAMES: Record<string, string> = {
   'Fruits & Veg': '🥬 Fresh',
-  'Water': '🥤 Hydration',
+  'Beverages': '🥤 Beverages',
   'Snacks': '🍿 Snacks',
   'Breakfast': '🍳 Breakfast',
   'Dairy': '🥛 Dairy',
+  'Pantry': '🫙 Pantry',
+  'Bread & Bakery': '🍞 Bread & Bakery',
+  'Proteins': '🥩 Proteins',
+  'Frozen': '🧊 Frozen',
+  'Household': '🧹 Household',
 };
 
 const STARTER_PACKS: Record<typeof VIBES[number]['id'], EssentialItem[]> = {
@@ -28,27 +39,95 @@ const STARTER_PACKS: Record<typeof VIBES[number]['id'], EssentialItem[]> = {
     { id: 'h1', name: 'Bananas', quantity: 'weekly', category: 'Fruits & Veg' },
     { id: 'h2', name: 'Spinach', quantity: 'weekly', category: 'Fruits & Veg' },
     { id: 'h3', name: 'Apples', quantity: 'weekly', category: 'Fruits & Veg' },
-    { id: 'h4', name: 'Greek Yogurt', quantity: 'weekly', category: 'Dairy' },
-    { id: 'h5', name: 'Bottled Water', quantity: 'weekly', category: 'Water' },
+    { id: 'h4', name: 'Avocados', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 'h5', name: 'Berries', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 'h6', name: 'Greek Yogurt', quantity: 'weekly', category: 'Dairy' },
+    { id: 'h7', name: 'Almond Milk', quantity: 'weekly', category: 'Beverages' },
+    { id: 'h8', name: 'Orange Juice', quantity: 'weekly', category: 'Beverages' },
+    { id: 'h9', name: 'Bottled Water', quantity: 'weekly', category: 'Beverages' },
+    { id: 'h10', name: 'Eggs', quantity: 'weekly', category: 'Breakfast' },
+    { id: 'h11', name: 'Oatmeal', quantity: 'weekly', category: 'Breakfast' },
+    { id: 'h12', name: 'Chicken Breast', quantity: 'weekly', category: 'Proteins' },
+    { id: 'h13', name: 'Salmon', quantity: 'weekly', category: 'Proteins' },
+    { id: 'h14', name: 'Brown Rice', quantity: 'weekly', category: 'Pantry' },
+    { id: 'h15', name: 'Olive Oil', quantity: 'weekly', category: 'Pantry' },
+    { id: 'h16', name: 'Whole Wheat Bread', quantity: 'weekly', category: 'Bread & Bakery' },
+    { id: 'h17', name: 'Trail Mix', quantity: 'weekly', category: 'Snacks' },
+    { id: 'h18', name: 'Paper Towels', quantity: 'weekly', category: 'Household' },
   ],
   balanced: [
     { id: 'b1', name: 'Bananas', quantity: 'weekly', category: 'Fruits & Veg' },
-    { id: 'b2', name: 'Eggs', quantity: 'weekly', category: 'Breakfast' },
-    { id: 'b3', name: 'Milk', quantity: 'weekly', category: 'Dairy' },
-    { id: 'b4', name: 'Chips', quantity: 'weekly', category: 'Snacks' },
-    { id: 'b5', name: 'Bottled Water', quantity: 'weekly', category: 'Water' },
+    { id: 'b2', name: 'Onions', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 'b3', name: 'Tomatoes', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 'b4', name: 'Potatoes', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 'b5', name: 'Eggs', quantity: 'weekly', category: 'Breakfast' },
+    { id: 'b6', name: 'Cereal', quantity: 'weekly', category: 'Breakfast' },
+    { id: 'b7', name: 'Milk', quantity: 'weekly', category: 'Dairy' },
+    { id: 'b8', name: 'Cheese', quantity: 'weekly', category: 'Dairy' },
+    { id: 'b9', name: 'Butter', quantity: 'weekly', category: 'Dairy' },
+    { id: 'b10', name: 'Juice', quantity: 'weekly', category: 'Beverages' },
+    { id: 'b11', name: 'Bottled Water', quantity: 'weekly', category: 'Beverages' },
+    { id: 'b12', name: 'Bread', quantity: 'weekly', category: 'Bread & Bakery' },
+    { id: 'b13', name: 'Tortillas', quantity: 'weekly', category: 'Bread & Bakery' },
+    { id: 'b14', name: 'Chicken Thighs', quantity: 'weekly', category: 'Proteins' },
+    { id: 'b15', name: 'Ground Beef', quantity: 'weekly', category: 'Proteins' },
+    { id: 'b16', name: 'Rice', quantity: 'weekly', category: 'Pantry' },
+    { id: 'b17', name: 'Pasta', quantity: 'weekly', category: 'Pantry' },
+    { id: 'b18', name: 'Cooking Oil', quantity: 'weekly', category: 'Pantry' },
+    { id: 'b19', name: 'Chips', quantity: 'weekly', category: 'Snacks' },
+    { id: 'b20', name: 'Frozen Veggies', quantity: 'weekly', category: 'Frozen' },
+    { id: 'b21', name: 'Paper Towels', quantity: 'weekly', category: 'Household' },
+    { id: 'b22', name: 'Trash Bags', quantity: 'weekly', category: 'Household' },
   ],
   snacks: [
     { id: 's1', name: 'Chips', quantity: 'weekly', category: 'Snacks' },
     { id: 's2', name: 'Granola Bars', quantity: 'weekly', category: 'Snacks' },
-    { id: 's3', name: 'Bottled Water', quantity: 'weekly', category: 'Water' },
-    { id: 's4', name: 'Apples', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 's3', name: 'Cookies', quantity: 'weekly', category: 'Snacks' },
+    { id: 's4', name: 'Popcorn', quantity: 'weekly', category: 'Snacks' },
+    { id: 's5', name: 'Pretzels', quantity: 'weekly', category: 'Snacks' },
+    { id: 's6', name: 'Apples', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 's7', name: 'Grapes', quantity: 'weekly', category: 'Fruits & Veg' },
+    { id: 's8', name: 'Juice', quantity: 'weekly', category: 'Beverages' },
+    { id: 's9', name: 'Soda', quantity: 'weekly', category: 'Beverages' },
+    { id: 's10', name: 'Bottled Water', quantity: 'weekly', category: 'Beverages' },
+    { id: 's11', name: 'Cake', quantity: 'weekly', category: 'Bread & Bakery' },
+    { id: 's12', name: 'Ice Cream', quantity: 'weekly', category: 'Frozen' },
+    { id: 's13', name: 'Frozen Pizza', quantity: 'weekly', category: 'Frozen' },
   ],
 };
 
 export default function Vault({ preferences, onSave, onBack }: VaultProps) {
   const [step, setStep] = useState<1 | 2>(preferences.essentials?.length > 0 ? 2 : 1);
   const [selectedVibe, setSelectedVibe] = useState<typeof VIBES[number]['id'] | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState<EssentialItem['category']>('Fruits & Veg');
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showAddForm && addInputRef.current) {
+      addInputRef.current.focus();
+    }
+  }, [showAddForm]);
+
+  const addCustomItem = () => {
+    const trimmed = newItemName.trim();
+    if (!trimmed) return;
+    onSave({
+      ...preferences,
+      essentials: [
+        ...(preferences.essentials || []),
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          name: trimmed,
+          quantity: 'weekly',
+          category: newItemCategory,
+        },
+      ],
+    });
+    setNewItemName('');
+    setShowAddForm(false);
+  };
 
   const generateEssentials = (vibeId: typeof VIBES[number]['id']) => {
     const newEssentials = STARTER_PACKS[vibeId].map(item => ({
@@ -211,13 +290,87 @@ export default function Vault({ preferences, onSave, onBack }: VaultProps) {
         ))}
       </div>
 
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/20"
+            onClick={() => setShowAddForm(false)}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-md bg-[#fdfaf6] rounded-t-3xl p-6 pb-10 shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold tracking-tight">Add item</h3>
+                <button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-black/5 rounded-full">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <input
+                ref={addInputRef}
+                type="text"
+                value={newItemName}
+                onChange={e => setNewItemName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCustomItem()}
+                placeholder="e.g. Plantains, Mango Juice, Cake..."
+                className="w-full p-4 rounded-2xl border border-black/10 bg-white text-sm font-medium tracking-tight placeholder:opacity-30 focus:outline-none focus:border-black/30 mb-4"
+              />
+
+              <div className="mb-6">
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-30 mb-3">Category</p>
+                <div className="flex flex-wrap gap-2">
+                  {ALL_CATEGORIES.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setNewItemCategory(cat)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        newItemCategory === cat
+                          ? 'bg-black text-white'
+                          : 'bg-black/5 text-black/50 hover:bg-black/10'
+                      }`}
+                    >
+                      {CATEGORY_NAMES[cat] || cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={addCustomItem}
+                disabled={!newItemName.trim()}
+                className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all disabled:opacity-20 disabled:active:scale-100"
+              >
+                <Plus size={16} />
+                Add to Baseline
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#fdfaf6] border-t border-black/5 max-w-md mx-auto z-50">
-        <button
-          onClick={onBack}
-          className="w-full py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
-        >
-          Confirm Weekly Baseline
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="py-4 px-5 bg-white border border-black/10 rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 hover:border-black/20 active:scale-95 transition-all"
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            onClick={onBack}
+            className="flex-1 py-4 bg-black text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-black/10 active:scale-95 transition-all"
+          >
+            Confirm Weekly Baseline
+          </button>
+        </div>
       </div>
     </div>
   );

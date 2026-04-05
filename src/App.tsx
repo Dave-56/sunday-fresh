@@ -263,8 +263,15 @@ export default function App() {
                 prepTime: { type: Type.STRING },
                 servings: { type: Type.NUMBER },
                 type: { type: Type.STRING, enum: ["Heritage", "Explorer"] },
+                servedWith: {
+                  type: Type.OBJECT,
+                  properties: {
+                    primary: { type: Type.STRING },
+                  },
+                  required: ["primary"],
+                },
               },
-              required: ["name", "cuisine", "why", "difficulty", "prepTime", "servings", "type"],
+              required: ["name", "cuisine", "why", "difficulty", "prepTime", "servings", "type", "servedWith"],
             },
           },
         },

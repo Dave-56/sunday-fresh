@@ -23,27 +23,27 @@ export async function sendMealOptions(
   dishes: Dish[],
   imageUrls: string[]
 ): Promise<void> {
-  // Send photos as a media group (up to 3)
-  if (imageUrls.length > 0) {
-    const media = imageUrls.slice(0, 3).map((url, i) => ({
-      type: 'photo' as const,
-      media: url,
-      caption: `${i + 1}. ${dishes[i]?.name ?? 'Unknown'} (${dishes[i]?.cuisine ?? ''}) — ${dishes[i]?.type ?? ''}`,
-    }));
-
-    await callApi('sendMediaGroup', {
-      chat_id: chatId(),
-      media,
-    });
+  // Send each photo individually with its dish name
+  for (let i = 0; i < dishes.length; i++) {
+    const d = dishes[i];
+    const url = imageUrls[i];
+    const servedLine = d.servedWith?.primary ? `\nBest with: ${d.servedWith.primary}` : '';
+    if (url) {
+      await callApi('sendPhoto', {
+        chat_id: chatId(),
+        photo: url,
+        caption: `${i + 1}. ${d.name}\n${d.cuisine} — ${d.type}${servedLine}`,
+      });
+    } else {
+      await callApi('sendMessage', {
+        chat_id: chatId(),
+        text: `${i + 1}. ${d.name}\n${d.cuisine} — ${d.type}${servedLine}`,
+      });
+    }
   }
 
-  // Send text message with inline keyboard
-  const text =
-    `sunday. — your 3 meals this week:\n\n` +
-    dishes
-      .map((d, i) => `${i + 1}. ${d.name} (${d.cuisine}) — ${d.type}`)
-      .join('\n') +
-    `\n\nTap a button to pick:`;
+  // Send pick message with inline keyboard
+  const text = `sunday. — tap to pick your meal this week:`;
 
   await callApi('sendMessage', {
     chat_id: chatId(),

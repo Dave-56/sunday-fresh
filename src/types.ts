@@ -35,7 +35,7 @@ export interface EssentialItem {
   id: string;
   name: string;
   quantity: string;
-  category: 'Fruits & Veg' | 'Water' | 'Snacks' | 'Breakfast' | 'Dairy' | 'Pantry';
+  category: 'Fruits & Veg' | 'Beverages' | 'Snacks' | 'Breakfast' | 'Dairy' | 'Pantry' | 'Bread & Bakery' | 'Proteins' | 'Frozen' | 'Household';
 }
 
 export interface UserPreferences {
