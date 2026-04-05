@@ -1,4 +1,4 @@
-import type { Dish } from './types.js';
+import type { Dish, RecipeSection, IngredientMapping } from './types.js';
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN!;
 const chatId = () => process.env.TELEGRAM_CHAT_ID!;
@@ -107,6 +107,162 @@ export async function sendCartReady(itemCount: number): Promise<void> {
     chat_id: chatId(),
     text: `sunday. — Cart ready! ${itemCount} items added to your Kroger cart.\n\nTap to checkout: https://www.kroger.com/cart`,
   });
+}
+
+// HTML-escape user-generated strings for Telegram parse_mode: 'HTML'
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Send cart summary with ingredient cross-check (replaces sendCartReady for enriched flow)
+ */
+export async function sendCartSummary(
+  mappings: IngredientMapping[],
+  itemCount: number
+): Promise<void> {
+  const recipeMatched = mappings.filter(m => m.upc && !m.isEssential);
+  const recipeMissed = mappings.filter(m => !m.upc && !m.isEssential);
+  const totalRecipe = recipeMatched.length + recipeMissed.length;
+
+  let text = `sunday. — Cart ready! ${recipeMatched.length} of ${totalRecipe} recipe items matched.\n`;
+
+  if (recipeMatched.length > 0) {
+    text += `\n<b>Matched</b>\n`;
+    for (const m of recipeMatched) {
+      text += `  ${esc(m.searchTerm)} → ${esc(m.krogerProduct!)}${m.krogerBrand ? ` (${esc(m.krogerBrand)})` : ''}\n`;
+    }
+  }
+
+  if (recipeMissed.length > 0) {
+    text += `\n<b>Not found — grab these yourself</b>\n`;
+    for (const m of recipeMissed) {
+      text += `  ${esc(m.ingredient)}\n`;
+    }
+  }
+
+  // Essentials summary (don't itemize, just count)
+  const essentialsMatched = mappings.filter(m => m.upc && m.isEssential).length;
+  const essentialsTotal = mappings.filter(m => m.isEssential).length;
+  if (essentialsTotal > 0) {
+    text += `\n+ ${essentialsMatched} of ${essentialsTotal} essentials added`;
+  }
+
+  text += `\n\nTap to checkout: https://www.qfc.com/cart`;
+
+  // Telegram 4096 char limit — truncate matched list if needed
+  if (text.length > 4096) {
+    const overflow = text.length - 4000;
+    const matchedSection = recipeMatched.map(
+      m => `  ${esc(m.searchTerm)} → ${esc(m.krogerProduct!)}${m.krogerBrand ? ` (${esc(m.krogerBrand)})` : ''}\n`
+    );
+    // Remove lines from end of matched section to fit
+    let removed = 0;
+    while (matchedSection.length > 0 && removed < overflow) {
+      removed += matchedSection.pop()!.length;
+    }
+    // Rebuild
+    text = `sunday. — Cart ready! ${recipeMatched.length} of ${totalRecipe} recipe items matched.\n`;
+    text += `\n<b>Matched</b>\n` + matchedSection.join('');
+    text += `  ... and ${recipeMatched.length - matchedSection.length} more\n`;
+    if (recipeMissed.length > 0) {
+      text += `\n<b>Not found — grab these yourself</b>\n`;
+      for (const m of recipeMissed) {
+        text += `  ${esc(m.ingredient)}\n`;
+      }
+    }
+    if (essentialsTotal > 0) {
+      text += `\n+ ${essentialsMatched} of ${essentialsTotal} essentials added`;
+    }
+    text += `\n\nTap to checkout: https://www.qfc.com/cart`;
+  }
+
+  await callApi('sendMessage', {
+    chat_id: chatId(),
+    text,
+    parse_mode: 'HTML',
+  });
+}
+
+/**
+ * Send recipe card (ingredients + cooking instructions) as Telegram message(s)
+ */
+export async function sendRecipeCard(
+  dish: Dish,
+  recipe: { ingredients: string[]; sections: RecipeSection[] }
+): Promise<void> {
+  const header = `<b>${esc(dish.name.toUpperCase())}</b>\n${esc(dish.cuisine)} — ${dish.difficulty} — ${esc(dish.prepTime)} — ${dish.servings} servings\n`;
+
+  let ingredientBlock = `\n<b>Ingredients</b>\n`;
+  for (const ing of recipe.ingredients) {
+    ingredientBlock += `- ${esc(ing)}\n`;
+  }
+
+  let instructionBlock = '';
+  let stepNum = 1;
+  for (const section of recipe.sections) {
+    instructionBlock += `\n<b>${esc(section.title)}</b>\n`;
+    for (const step of section.steps) {
+      const timeNote = step.time ? ` (${esc(step.time)})` : '';
+      instructionBlock += `${String(stepNum).padStart(2, '0')}. ${esc(step.text)}${timeNote}\n`;
+      stepNum++;
+    }
+  }
+
+  const fullMessage = header + ingredientBlock + instructionBlock;
+
+  if (fullMessage.length <= 4096) {
+    await callApi('sendMessage', {
+      chat_id: chatId(),
+      text: fullMessage,
+      parse_mode: 'HTML',
+    });
+  } else {
+    // Split: ingredients first, then instructions
+    await callApi('sendMessage', {
+      chat_id: chatId(),
+      text: header + ingredientBlock,
+      parse_mode: 'HTML',
+    });
+    // Instructions may also need splitting by section
+    let instrMsg = `<b>${esc(dish.name)} — Instructions</b>\n` + instructionBlock;
+    if (instrMsg.length <= 4096) {
+      await callApi('sendMessage', {
+        chat_id: chatId(),
+        text: instrMsg,
+        parse_mode: 'HTML',
+      });
+    } else {
+      // Send section by section
+      let batch = `<b>${esc(dish.name)} — Instructions</b>\n`;
+      stepNum = 1;
+      for (const section of recipe.sections) {
+        let sectionText = `\n<b>${esc(section.title)}</b>\n`;
+        for (const step of section.steps) {
+          const timeNote = step.time ? ` (${esc(step.time)})` : '';
+          sectionText += `${String(stepNum).padStart(2, '0')}. ${esc(step.text)}${timeNote}\n`;
+          stepNum++;
+        }
+        if (batch.length + sectionText.length > 4096) {
+          await callApi('sendMessage', {
+            chat_id: chatId(),
+            text: batch,
+            parse_mode: 'HTML',
+          });
+          batch = sectionText;
+        } else {
+          batch += sectionText;
+        }
+      }
+      if (batch.trim()) {
+        await callApi('sendMessage', {
+          chat_id: chatId(),
+          text: batch,
+          parse_mode: 'HTML',
+        });
+      }
+    }
+  }
 }
 
 /**

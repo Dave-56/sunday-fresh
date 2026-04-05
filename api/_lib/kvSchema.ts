@@ -1,4 +1,4 @@
-import type { Dish, UserPreferences, HistoryItem } from './types.js';
+import type { Dish, UserPreferences, HistoryItem, IngredientMapping } from './types.js';
 
 // ---------------------------------------------------------------------------
 // KV key names — single source of truth for both app sync and agent reads
@@ -11,6 +11,7 @@ export const KV_KEYS = {
   pendingMeals: 'pending_meals',
   oauthState: 'oauth:state',
   selectionLock: 'selection_lock',
+  activeRecipe: 'user:active_recipe',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ export const KV_TTL = {
   pendingMeals: 86_400,     // 24h — expire if no reply
   oauthState: 600,           // 10 min — OAuth should complete quickly
   selectionLock: 300,        // 5 min — prevents duplicate cart adds from webhook retries
+  activeRecipe: 604_800,     // 7 days — one meal prep cycle
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -44,6 +46,13 @@ export interface KVOAuthState {
   selection: number | null;
   dish: Dish | null;
   createdAt: number;
+}
+
+export interface KVActiveRecipe {
+  dish: Dish;
+  mappings: IngredientMapping[];
+  cartItemCount: number;
+  filledAt: number;
 }
 
 // Re-export types the agent will read from KV

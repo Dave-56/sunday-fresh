@@ -10,17 +10,17 @@ import {
   deleteUserSession,
   KROGER_API_BASE,
 } from './krogerServer.js';
-import type { Dish } from './types.js';
+import type { Dish, RecipeSection, IngredientMapping } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Result types
 // ---------------------------------------------------------------------------
 export type FillCartResult =
-  | { ok: true; itemCount: number; cartResponse: unknown }
+  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: string[]; sections: RecipeSection[] }; mappings: IngredientMapping[] }
   | { ok: false; error: string };
 
 export type SelectionResult =
-  | { ok: true; itemCount: number; cartResponse: unknown }
+  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: string[]; sections: RecipeSection[] }; mappings: IngredientMapping[]; dish: Dish }
   | { ok: false; error: string; needsAuth?: boolean; selection?: number; dish?: Dish };
 
 // ---------------------------------------------------------------------------
@@ -75,8 +75,11 @@ export async function fillCart(
   if (!detailText) throw new Error('Empty detail response from Gemini');
   const detail = JSON.parse(detailText);
   const ingredients: string[] = detail.ingredients || [];
+  const sections: RecipeSection[] = detail.sections || [];
+  const recipe = { ingredients, sections };
 
   // Also add essentials from preferences
+  const recipeItemCount = ingredients.length;
   const allItems: string[] = [...ingredients];
   if (preferences.essentials) {
     for (const e of preferences.essentials) {
@@ -105,12 +108,14 @@ export async function fillCart(
     }
   }
 
-  // Search products and build cart
+  // Search products and build cart + ingredient mappings
   const cartItems: { upc: string; quantity: number }[] = [];
+  const mappings: IngredientMapping[] = [];
   const clientToken = await getClientToken();
 
   for (let i = 0; i < allItems.length; i++) {
     const term = cleanSearchTerm(allItems[i]);
+    const isEssential = i >= recipeItemCount;
     if (!term) continue;
 
     try {
@@ -126,10 +131,30 @@ export async function fillCart(
         const product = prodData.data?.[0];
         if (product?.upc) {
           cartItems.push({ upc: product.upc, quantity: 1 });
+          mappings.push({
+            ingredient: allItems[i], searchTerm: term,
+            krogerProduct: product.description || null,
+            krogerBrand: product.brand || null,
+            upc: product.upc, isEssential,
+          });
+        } else {
+          mappings.push({
+            ingredient: allItems[i], searchTerm: term,
+            krogerProduct: null, krogerBrand: null, upc: null, isEssential,
+          });
         }
+      } else {
+        mappings.push({
+          ingredient: allItems[i], searchTerm: term,
+          krogerProduct: null, krogerBrand: null, upc: null, isEssential,
+        });
       }
     } catch (err) {
       console.error(`Product search failed for "${term}":`, err);
+      mappings.push({
+        ingredient: allItems[i], searchTerm: term,
+        krogerProduct: null, krogerBrand: null, upc: null, isEssential,
+      });
     }
 
     // Rate limit: 200ms between requests
@@ -179,7 +204,7 @@ export async function fillCart(
       };
     }
 
-    return { ok: true, itemCount: cartItems.length, cartResponse };
+    return { ok: true, itemCount: cartItems.length, cartResponse, recipe, mappings };
   } catch (err: any) {
     console.error('Kroger cart error:', err);
     return { ok: false, error: 'Kroger cart request failed.' };
@@ -247,10 +272,24 @@ export async function handleMealSelection(
   // Fill the cart
   const result = await fillCart(dish, preferences, userToken);
 
-  if (result.ok) {
-    // Clear pending meals on success
-    await redis.del(KV_KEYS.pendingMeals);
+  if (result.ok === false) {
+    return { ok: false as const, error: result.error };
   }
 
-  return result;
+  // Clear pending meals on success
+  await redis.del(KV_KEYS.pendingMeals);
+  // Enrich dish with full recipe data for downstream use
+  const enrichedDish: Dish = {
+    ...dish,
+    ingredients: result.recipe.ingredients,
+    sections: result.recipe.sections,
+  };
+  return {
+    ok: true as const,
+    itemCount: result.itemCount,
+    cartResponse: result.cartResponse,
+    recipe: result.recipe,
+    mappings: result.mappings,
+    dish: enrichedDish,
+  };
 }

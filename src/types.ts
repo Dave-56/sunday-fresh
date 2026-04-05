@@ -38,6 +38,15 @@ export interface EssentialItem {
   category: 'Fruits & Veg' | 'Beverages' | 'Snacks' | 'Breakfast' | 'Dairy' | 'Pantry' | 'Bread & Bakery' | 'Proteins' | 'Frozen' | 'Household';
 }
 
+export interface IngredientMapping {
+  ingredient: string;
+  searchTerm: string;
+  krogerProduct: string | null;
+  krogerBrand: string | null;
+  upc: string | null;
+  isEssential: boolean;
+}
+
 export interface UserPreferences {
   householdSize: string;
   cuisines: string[];

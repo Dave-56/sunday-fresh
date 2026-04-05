@@ -13,9 +13,10 @@ import {
   KROGER_AUTH_URL,
 } from '../../_lib/krogerServer.js';
 import { fillCart } from '../../_lib/handleMealSelection.js';
-import { sendCartReady, sendError } from '../../_lib/telegram.js';
+import { sendCartSummary, sendRecipeCard, sendError } from '../../_lib/telegram.js';
 import { KV_KEYS, KV_TTL } from '../../_lib/kvSchema.js';
-import type { KVKrogerSession, KVPreferences, KVOAuthState } from '../../_lib/kvSchema.js';
+import type { KVKrogerSession, KVPreferences, KVOAuthState, KVActiveRecipe } from '../../_lib/kvSchema.js';
+import type { Dish } from '../../_lib/types.js';
 
 export const config = { maxDuration: 60 };
 
@@ -135,9 +136,23 @@ async function telegramAutoFill(
     const result = await fillCart(oauthState.dish!, preferences, userToken);
 
     if (result.ok) {
-      await sendCartReady(result.itemCount);
-      // Clear pending meals
-      await redis.del(KV_KEYS.pendingMeals);
+      const enrichedDish: Dish = {
+        ...oauthState.dish!,
+        ingredients: result.recipe.ingredients,
+        sections: result.recipe.sections,
+      };
+
+      await sendCartSummary(result.mappings, result.itemCount);
+      await Promise.all([
+        sendRecipeCard(enrichedDish, result.recipe),
+        redis.set<KVActiveRecipe>(KV_KEYS.activeRecipe, {
+          dish: enrichedDish,
+          mappings: result.mappings,
+          cartItemCount: result.itemCount,
+          filledAt: Date.now(),
+        }, { ex: KV_TTL.activeRecipe }),
+        redis.del(KV_KEYS.pendingMeals),
+      ]);
     } else {
       await sendError('Signed in, but cart fill failed. Tap the meal button again.');
     }
