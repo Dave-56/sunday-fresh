@@ -327,7 +327,10 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
             </p>
             <div className="flex flex-col gap-3 w-full">
               <button
-                onClick={() => window.open('https://www.qfc.com/cart', '_blank')}
+                onClick={() => {
+                  window.open('https://www.qfc.com/cart', '_blank');
+                  onBack();
+                }}
                 className="w-full py-4 bg-[#0068B5] text-white rounded-xl font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
               >
                 Finish on QFC

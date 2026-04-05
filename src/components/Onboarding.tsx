@@ -16,7 +16,8 @@ interface OnboardingProps {
 const STEPS = [
   'Welcome',
   'Household',
-  'Cuisines',
+  'Heritage',
+  'Explorer',
   'Restrictions',
   'PrepTime',
   'Variety',
@@ -55,10 +56,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     if (step === 0) return true;
     if (step === 1) return !!prefs.householdSize;
     if (step === 2) return prefs.cuisines.length > 0;
-    if (step === 3) return prefs.restrictions.length > 0;
-    if (step === 4) return !!prefs.prepTime;
-    if (step === 5) return !!prefs.variety;
-    if (step === 6) return true;
+    if (step === 3) return prefs.cuisines.length > 1;
+    if (step === 4) return prefs.restrictions.length > 0;
+    if (step === 5) return !!prefs.prepTime;
+    if (step === 6) return !!prefs.variety;
+    if (step === 7) return true;
     return false;
   };
 
@@ -104,8 +106,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       case 2:
         return (
           <div className="px-6">
-            <h2 className="text-2xl font-bold tracking-tight mb-8">What cuisines feel like home?</h2>
-            <p className="text-xs opacity-40 mb-6 uppercase font-bold tracking-widest">Pick all that apply</p>
+            <h2 className="text-2xl font-bold tracking-tight mb-8">What's your heritage cuisine?</h2>
+            <p className="text-xs opacity-40 mb-6 uppercase font-bold tracking-widest">Pick one</p>
             <div className="space-y-3">
               {[
                 'Nigerian / West African',
@@ -113,25 +115,72 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 'Mediterranean / Middle Eastern',
                 'American / Western',
                 'Indian / South Asian',
-                'Open to anything'
               ].map(option => (
                 <button
                   key={option}
-                  onClick={() => toggleMulti('cuisines', option)}
+                  onClick={() => setPrefs(prev => ({
+                    ...prev,
+                    cuisines: [option, ...prev.cuisines.slice(1).filter(c => c !== option)]
+                  }))}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all flex justify-between items-center gap-4",
-                    prefs.cuisines.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
+                    prefs.cuisines[0] === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                   )}
                 >
                   <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
-                  {prefs.cuisines.includes(option) && <Check size={16} className="shrink-0" />}
+                  {prefs.cuisines[0] === option && <Check size={16} className="shrink-0" />}
                 </button>
               ))}
             </div>
           </div>
         );
 
-      case 3:
+      case 3: {
+        const heritage = prefs.cuisines[0];
+        const explorers = prefs.cuisines.slice(1);
+        const explorerOptions = [
+          'Nigerian / West African',
+          'Asian (Chinese, Japanese, Korean, Thai)',
+          'Mediterranean / Middle Eastern',
+          'American / Western',
+          'Indian / South Asian',
+          'Open to anything'
+        ].filter(c => c !== heritage);
+
+        return (
+          <div className="px-6">
+            <h2 className="text-2xl font-bold tracking-tight mb-8">What else do you want to explore?</h2>
+            <p className="text-xs opacity-40 mb-6 uppercase font-bold tracking-widest">Pick at least one</p>
+            <div className="space-y-3">
+              {explorerOptions.map(option => (
+                <button
+                  key={option}
+                  onClick={() => setPrefs(prev => {
+                    const current = prev.cuisines.slice(1);
+                    if (option === 'Open to anything') {
+                      const next = current.includes(option) ? [] : [option];
+                      return { ...prev, cuisines: [prev.cuisines[0], ...next] };
+                    }
+                    const next = current.includes(option)
+                      ? current.filter(v => v !== option)
+                      : [...current.filter(v => v !== 'Open to anything'), option];
+                    return { ...prev, cuisines: [prev.cuisines[0], ...next] };
+                  })}
+                  className={cn(
+                    "w-full text-left p-5 rounded-xl border transition-all flex justify-between items-center gap-4",
+                    explorers.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
+                  )}
+                >
+                  <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
+                  {explorers.includes(option) && <Check size={16} className="shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      case 4:
         return (
           <div className="px-6">
             <h2 className="text-2xl font-bold tracking-tight mb-8">Any dietary restrictions to always respect?</h2>
@@ -149,7 +198,16 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               ].map(option => (
                 <button
                   key={option}
-                  onClick={() => toggleMulti('restrictions', option)}
+                  onClick={() => setPrefs(prev => {
+                    const none = 'None \u2014 we eat everything';
+                    if (option === none) {
+                      return { ...prev, restrictions: prev.restrictions.includes(none) ? [] : [none] };
+                    }
+                    const next = prev.restrictions.includes(option)
+                      ? prev.restrictions.filter(v => v !== option)
+                      : [...prev.restrictions.filter(v => v !== none), option];
+                    return { ...prev, restrictions: next };
+                  })}
                   className={cn(
                     "w-full text-left p-5 rounded-xl border transition-all flex justify-between items-center gap-4",
                     prefs.restrictions.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
@@ -163,7 +221,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         );
 
-      case 4:
+      case 5:
         return (
           <div className="px-6">
             <h2 className="text-2xl font-bold tracking-tight mb-8">How long can you cook on prep day?</h2>
@@ -189,7 +247,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         );
 
-      case 5:
+      case 6:
         return (
           <div className="px-6">
             <h2 className="text-2xl font-bold tracking-tight mb-8">How do you want variety?</h2>
@@ -214,7 +272,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         );
 
-      case 6:
+      case 7:
         return (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <h1 className="text-4xl font-bold tracking-tight mb-4">you're all set.</h1>

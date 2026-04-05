@@ -61,7 +61,37 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
         </section>
 
         <section>
-          <h3 className="text-sm font-bold tracking-tight mb-4">Cuisines</h3>
+          <h3 className="text-sm font-bold tracking-tight mb-2">Heritage Cuisine</h3>
+          <p className="text-[11px] opacity-40 mb-4">Your primary cuisine — dishes 1 & 2 each week come from here.</p>
+          <div className="space-y-2">
+            {[
+              'Nigerian / West African',
+              'Asian (Chinese, Japanese, Korean, Thai)',
+              'Mediterranean / Middle Eastern',
+              'American / Western',
+              'Indian / South Asian',
+            ].map(option => (
+              <button
+                key={option}
+                onClick={() => setPrefs(prev => ({
+                  ...prev,
+                  cuisines: [option, ...prev.cuisines.slice(1).filter(c => c !== option)]
+                }))}
+                className={cn(
+                  "w-full text-left p-4 rounded-xl border transition-all flex justify-between items-center gap-4",
+                  prefs.cuisines[0] === option ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
+                )}
+              >
+                <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
+                {prefs.cuisines[0] === option && <Check size={16} className="shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-bold tracking-tight mb-2">Explorer Cuisines</h3>
+          <p className="text-[11px] opacity-40 mb-4">Dish 3 each week explores these.</p>
           <div className="space-y-2">
             {[
               'Nigerian / West African',
@@ -70,17 +100,27 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
               'American / Western',
               'Indian / South Asian',
               'Open to anything'
-            ].map(option => (
+            ].filter(c => c !== prefs.cuisines[0]).map(option => (
               <button
                 key={option}
-                onClick={() => toggleMulti('cuisines', option)}
+                onClick={() => setPrefs(prev => {
+                  const explorers = prev.cuisines.slice(1);
+                  if (option === 'Open to anything') {
+                    const next = explorers.includes(option) ? [] : [option];
+                    return { ...prev, cuisines: [prev.cuisines[0], ...next] };
+                  }
+                  const next = explorers.includes(option)
+                    ? explorers.filter(v => v !== option)
+                    : [...explorers.filter(v => v !== 'Open to anything'), option];
+                  return { ...prev, cuisines: [prev.cuisines[0], ...next] };
+                })}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex justify-between items-center gap-4",
-                  prefs.cuisines.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
+                  prefs.cuisines.slice(1).includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"
                 )}
               >
                 <span className="text-sm font-medium tracking-tight leading-snug">{option}</span>
-                {prefs.cuisines.includes(option) && <Check size={16} className="shrink-0" />}
+                {prefs.cuisines.slice(1).includes(option) && <Check size={16} className="shrink-0" />}
               </button>
             ))}
           </div>
@@ -101,7 +141,16 @@ export default function Settings({ preferences, onSave, onBack }: SettingsProps)
             ].map(option => (
               <button
                 key={option}
-                onClick={() => toggleMulti('restrictions', option)}
+                onClick={() => setPrefs(prev => {
+                  const none = 'None \u2014 we eat everything';
+                  if (option === none) {
+                    return { ...prev, restrictions: prev.restrictions.includes(none) ? [] : [none] };
+                  }
+                  const next = prev.restrictions.includes(option)
+                    ? prev.restrictions.filter(v => v !== option)
+                    : [...prev.restrictions.filter(v => v !== none), option];
+                  return { ...prev, restrictions: next };
+                })}
                 className={cn(
                   "w-full text-left p-4 rounded-xl border transition-all flex justify-between items-center gap-4",
                   prefs.restrictions.includes(option) ? "border-zinc-400 bg-white text-zinc-900 shadow-sm" : "border-zinc-200 bg-white text-zinc-500"

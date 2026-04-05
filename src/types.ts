@@ -15,6 +15,10 @@ export interface Dish {
   difficulty: "Easy" | "Intermediate";
   prepTime: string;
   servings: number;
+  servedWith?: {
+    primary: string;
+    alternatives?: string[];
+  };
   ingredients?: string[];
   sections?: RecipeSection[];
   imageUrl?: string;

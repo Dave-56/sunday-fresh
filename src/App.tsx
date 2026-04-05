@@ -158,7 +158,7 @@ export default function App() {
         model: 'gemini-3.1-flash-image-preview',
         contents: {
           parts: [
-            { text: `A museum-grade professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a perfectly clean, solid minimalist background. Vibrant colors, natural bright lighting, macro textures. Served in a single elegant, modern ceramic bowl or plate. STRICT MINIMALISM: No side garnishes, no lime wedges, no scattered herbs, no side piles of ingredients, no napkins, no cutlery. Only the main dish vessel and its contents. The food is the absolute hero. High-end culinary magazine style. No people.` },
+            { text: `A museum-grade professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a perfectly clean, solid minimalist background. Vibrant colors, natural bright lighting, macro textures. Served in a single elegant, modern ceramic bowl or plate.${dish.servedWith?.primary ? ` A small secondary bowl of ${dish.servedWith.primary} is positioned beside the main dish, clearly subordinate.` : ''} STRICT MINIMALISM: No side garnishes, no lime wedges, no scattered herbs, no side piles of ingredients, no napkins, no cutlery. Only the main dish vessel${dish.servedWith?.primary ? ' and its accompaniment' : ''} and its contents. The food is the absolute hero. High-end culinary magazine style. No people.` },
           ],
         },
         config: {
@@ -443,7 +443,7 @@ export default function App() {
           <p className="text-sm opacity-60 leading-relaxed">{dish.why}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-12">
+        <div className={`grid ${dish.servedWith?.primary ? 'grid-cols-3' : 'grid-cols-2'} gap-4 mb-12`}>
           <div className="bg-white border border-black/5 p-4 rounded-2xl shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Time</p>
             <p className="text-sm font-medium">{dish.prepTime}</p>
@@ -452,6 +452,12 @@ export default function App() {
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Portions</p>
             <p className="text-sm font-medium">{dish.servings}</p>
           </div>
+          {dish.servedWith?.primary && (
+            <div className="bg-white border border-black/5 p-4 rounded-2xl shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Serve with</p>
+              <p className="text-sm font-medium">{dish.servedWith.primary}</p>
+            </div>
+          )}
         </div>
 
         <AnimatePresence mode="wait">
@@ -827,7 +833,10 @@ export default function App() {
                         </span>
                       </div>
                       <h3 className="text-xl font-bold tracking-tight leading-tight mb-3">{dish.name}</h3>
-                      <p className="text-xs opacity-50 line-clamp-3 leading-relaxed mb-5">{dish.why}</p>
+                      <p className="text-xs opacity-50 line-clamp-3 leading-relaxed mb-4">{dish.why}</p>
+                      {dish.servedWith?.primary && (
+                        <p className="text-[10px] opacity-40 mb-4">Best with: {dish.servedWith.primary}</p>
+                      )}
                       <div className="flex items-center text-[10px] font-bold uppercase tracking-widest opacity-40 group-hover:opacity-100 transition-opacity">
                         View Recipe <ChevronRight size={12} className="ml-1" />
                       </div>

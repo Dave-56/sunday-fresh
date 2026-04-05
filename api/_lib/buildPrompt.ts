@@ -30,14 +30,18 @@ Return exactly 3 distinct dish options. For each dish, provide:
 - difficulty: "Easy" or "Intermediate"
 - prepTime: Total time including prep
 - servings: Total portions
-- type: "Heritage" (for dishes 1 & 2) or "Explorer" (for dish 3)`;
+- type: "Heritage" (for dishes 1 & 2) or "Explorer" (for dish 3)
+- servedWith: An object with a "primary" field — what this dish is traditionally served with (e.g., "Steamed jasmine rice", "Fufu or pounded yam", "Warm crusty bread"). Pick the single most authentic pairing.`;
 }
 
 export function buildDetailPrompt(dish: any, preferences: UserPreferences): string {
   const { householdSize } = preferences;
+  const servedWithNote = dish.servedWith?.primary
+    ? `\nThis dish is traditionally served with: ${dish.servedWith.primary}. End the final cooking section with a step like "Serve hot with ${dish.servedWith.primary}." Do NOT add the accompaniment to the ingredients list.`
+    : '';
 
   return `You are a world-class culinary expert. Provide the full recipe details for: "${dish.name}" (${dish.cuisine}).
-Household size: ${householdSize}.
+Household size: ${householdSize}.${servedWithNote}
 
 INSTRUCTION GUIDELINES (MANDATORY):
 - Break instructions into logical sections (e.g., "Prep & Aromatics", "The Base", "Slow Simmer", "Finishing & Storage").
