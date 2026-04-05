@@ -1,4 +1,4 @@
-import { Dish, EssentialItem } from './types';
+import { Dish, EssentialItem } from './types.js';
 
 /**
  * Strip emojis, quantities, measurements, and prep notes to extract

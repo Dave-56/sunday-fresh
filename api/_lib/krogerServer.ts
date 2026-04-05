@@ -1,6 +1,6 @@
-import { redis } from './redis';
-import { KV_KEYS, KV_TTL } from './kvSchema';
-import type { KVKrogerSession } from './kvSchema';
+import { redis } from './redis.js';
+import { KV_KEYS, KV_TTL } from './kvSchema.js';
+import type { KVKrogerSession } from './kvSchema.js';
 
 // ---------------------------------------------------------------------------
 // Constants

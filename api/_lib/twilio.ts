@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import type { Dish } from './types';
+import type { Dish } from './types.js';
 
 function getClient() {
   return twilio(

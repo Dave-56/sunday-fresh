@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getClientToken, KROGER_API_BASE } from '../../_lib/krogerServer';
+import { getClientToken, KROGER_API_BASE } from '../../_lib/krogerServer.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {

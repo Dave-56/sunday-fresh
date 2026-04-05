@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { redis } from '../_lib/redis';
-import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
-import type { SyncPayload } from '../_lib/kvSchema';
+import { redis } from '../_lib/redis.js';
+import { KV_KEYS, KV_TTL } from '../_lib/kvSchema.js';
+import type { SyncPayload } from '../_lib/kvSchema.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { redis } from './redis';
-import { KV_KEYS } from './kvSchema';
-import type { KVPreferences, KVPendingMeals } from './kvSchema';
-import { buildDetailPrompt } from './buildPrompt';
-import { cleanSearchTerm } from './ingredients';
-import { getClientToken, getUserToken, KROGER_API_BASE } from './krogerServer';
+import { redis } from './redis.js';
+import { KV_KEYS } from './kvSchema.js';
+import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
+import { buildDetailPrompt } from './buildPrompt.js';
+import { cleanSearchTerm } from './ingredients.js';
+import { getClientToken, getUserToken, KROGER_API_BASE } from './krogerServer.js';
 
 export type SelectionResult =
   | { ok: true; itemCount: number }

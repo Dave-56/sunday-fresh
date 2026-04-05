@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { redis } from '../../_lib/redis';
+import { redis } from '../../_lib/redis.js';
 import {
   krogerBasicAuth,
   krogerRedirectUri,
   generateSessionId,
   setUserSession,
   KROGER_AUTH_URL,
-} from '../../_lib/krogerServer';
-import type { KVKrogerSession } from '../../_lib/kvSchema';
-import { KV_TTL } from '../../_lib/kvSchema';
+} from '../../_lib/krogerServer.js';
+import type { KVKrogerSession } from '../../_lib/kvSchema.js';
+import { KV_TTL } from '../../_lib/kvSchema.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const code = req.query.code as string;

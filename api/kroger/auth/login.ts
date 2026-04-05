@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { krogerRedirectUri, KROGER_AUTH_URL } from '../../_lib/krogerServer';
+import { krogerRedirectUri, KROGER_AUTH_URL } from '../../_lib/krogerServer.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const scopes = 'cart.basic:write product.compact profile.compact';

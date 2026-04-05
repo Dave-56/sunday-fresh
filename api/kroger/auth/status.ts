@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getUserSession } from '../../_lib/krogerServer';
+import { getUserSession } from '../../_lib/krogerServer.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const sessionId = req.query.session as string;

@@ -1,6 +1,6 @@
-import type { Dish } from './types';
-import * as twilio from './twilio';
-import * as telegram from './telegram';
+import type { Dish } from './types.js';
+import * as twilio from './twilio.js';
+import * as telegram from './telegram.js';
 
 function channel(): 'telegram' | 'twilio' {
   const ch = process.env.NOTIFICATION_CHANNEL || 'telegram';

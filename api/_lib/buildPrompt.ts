@@ -1,4 +1,4 @@
-import { UserPreferences } from './types';
+import { UserPreferences } from './types.js';
 
 export function buildTeaserPrompt(preferences: UserPreferences, history: string[]): string {
   const { householdSize, cuisines, restrictions, variety } = preferences;

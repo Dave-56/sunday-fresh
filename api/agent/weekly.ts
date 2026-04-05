@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
 import { put } from '@vercel/blob';
-import { redis } from '../_lib/redis';
-import { KV_KEYS, KV_TTL } from '../_lib/kvSchema';
-import type { KVPreferences, KVHistory, KVPendingMeals } from '../_lib/kvSchema';
-import { buildTeaserPrompt } from '../_lib/buildPrompt';
-import { sendMealOptions, sendError } from '../_lib/notifier';
-import type { Dish } from '../_lib/types';
+import { redis } from '../_lib/redis.js';
+import { KV_KEYS, KV_TTL } from '../_lib/kvSchema.js';
+import type { KVPreferences, KVHistory, KVPendingMeals } from '../_lib/kvSchema.js';
+import { buildTeaserPrompt } from '../_lib/buildPrompt.js';
+import { sendMealOptions, sendError } from '../_lib/notifier.js';
+import type { Dish } from '../_lib/types.js';
 
 /**
  * GET /api/agent/weekly

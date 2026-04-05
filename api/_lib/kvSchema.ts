@@ -1,4 +1,4 @@
-import type { Dish, UserPreferences, HistoryItem } from './types';
+import type { Dish, UserPreferences, HistoryItem } from './types.js';
 
 // ---------------------------------------------------------------------------
 // KV key names — single source of truth for both app sync and agent reads

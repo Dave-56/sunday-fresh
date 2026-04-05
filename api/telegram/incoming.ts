@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleMealSelection } from '../_lib/handleMealSelection';
-import { parseSelection, answerCallbackQuery, sendCartReady, sendError } from '../_lib/telegram';
+import { handleMealSelection } from '../_lib/handleMealSelection.js';
+import { parseSelection, answerCallbackQuery, sendCartReady, sendError } from '../_lib/telegram.js';
 
 /**
  * POST /api/telegram/incoming

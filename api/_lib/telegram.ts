@@ -1,4 +1,4 @@
-import type { Dish } from './types';
+import type { Dish } from './types.js';
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN!;
 const chatId = () => process.env.TELEGRAM_CHAT_ID!;

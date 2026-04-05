@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { parseReply, sendCartReady, sendError } from '../_lib/twilio';
-import { handleMealSelection } from '../_lib/handleMealSelection';
+import { parseReply, sendCartReady, sendError } from '../_lib/twilio.js';
+import { handleMealSelection } from '../_lib/handleMealSelection.js';
 
 /**
  * POST /api/twilio/incoming
