@@ -3,7 +3,7 @@ import { redis } from './redis.js';
 import { KV_KEYS } from './kvSchema.js';
 import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
 import { buildDetailPrompt } from './buildPrompt.js';
-import { cleanSearchTerm } from './ingredients.js';
+import { getSearchTerms, extractQuantity } from './ingredients.js';
 import {
   getClientToken,
   getUserToken,
@@ -114,50 +114,81 @@ export async function fillCart(
   const clientToken = await getClientToken();
 
   for (let i = 0; i < allItems.length; i++) {
-    const term = cleanSearchTerm(allItems[i]);
+    const terms = getSearchTerms(allItems[i]);
     const isEssential = i >= recipeItemCount;
-    if (!term) continue;
+    if (terms.length === 0) continue;
+
+    let matched = false;
+    let matchedTerm = terms[0];
 
     try {
-      let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=1`;
-      if (locationId) url += `&filter.locationId=${locationId}`;
+      // Try each fallback term with location
+      for (const term of terms) {
+        let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=1`;
+        if (locationId) url += `&filter.locationId=${locationId}`;
 
-      const prodRes = await fetch(url, {
-        headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
-      });
+        const prodRes = await fetch(url, {
+          headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
+        });
 
-      if (prodRes.ok) {
-        const prodData = await prodRes.json();
-        const product = prodData.data?.[0];
-        if (product?.upc) {
-          cartItems.push({ upc: product.upc, quantity: 1 });
-          mappings.push({
-            ingredient: allItems[i], searchTerm: term,
-            krogerProduct: product.description || null,
-            krogerBrand: product.brand || null,
-            upc: product.upc, isEssential,
-          });
-        } else {
-          mappings.push({
-            ingredient: allItems[i], searchTerm: term,
-            krogerProduct: null, krogerBrand: null, upc: null, isEssential,
-          });
+        if (prodRes.ok) {
+          const prodData = await prodRes.json();
+          const product = prodData.data?.[0];
+          if (product?.upc) {
+            const qty = isEssential ? 1 : extractQuantity(allItems[i]);
+            cartItems.push({ upc: product.upc, quantity: qty });
+            mappings.push({
+              ingredient: allItems[i], searchTerm: term, attemptedTerms: terms,
+              krogerProduct: product.description || null,
+              krogerBrand: product.brand || null,
+              upc: product.upc, isEssential,
+            });
+            matched = true;
+            matchedTerm = term;
+            break;
+          }
         }
-      } else {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // Last resort: primary term without locationId
+      if (!matched && locationId) {
+        const url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(terms[0])}&filter.limit=1`;
+        const prodRes = await fetch(url, {
+          headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
+        });
+        if (prodRes.ok) {
+          const prodData = await prodRes.json();
+          const product = prodData.data?.[0];
+          if (product?.upc) {
+            const qty = isEssential ? 1 : extractQuantity(allItems[i]);
+            cartItems.push({ upc: product.upc, quantity: qty });
+            mappings.push({
+              ingredient: allItems[i], searchTerm: terms[0], attemptedTerms: terms,
+              krogerProduct: product.description || null,
+              krogerBrand: product.brand || null,
+              upc: product.upc, isEssential,
+            });
+            matched = true;
+          }
+        }
+      }
+
+      if (!matched) {
         mappings.push({
-          ingredient: allItems[i], searchTerm: term,
+          ingredient: allItems[i], searchTerm: matchedTerm, attemptedTerms: terms,
           krogerProduct: null, krogerBrand: null, upc: null, isEssential,
         });
       }
     } catch (err) {
-      console.error(`Product search failed for "${term}":`, err);
+      console.error(`Product search failed for "${matchedTerm}":`, err);
       mappings.push({
-        ingredient: allItems[i], searchTerm: term,
+        ingredient: allItems[i], searchTerm: matchedTerm, attemptedTerms: terms,
         krogerProduct: null, krogerBrand: null, upc: null, isEssential,
       });
     }
 
-    // Rate limit: 200ms between requests
+    // Rate limit: 200ms between ingredients
     if (i < allItems.length - 1) {
       await new Promise((r) => setTimeout(r, 200));
     }

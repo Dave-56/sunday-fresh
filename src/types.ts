@@ -41,6 +41,7 @@ export interface EssentialItem {
 export interface IngredientMapping {
   ingredient: string;
   searchTerm: string;
+  attemptedTerms: string[];
   krogerProduct: string | null;
   krogerBrand: string | null;
   upc: string | null;

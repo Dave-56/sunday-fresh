@@ -11,7 +11,7 @@ import {
   CartItem,
 } from '../lib/kroger';
 import { Dish, EssentialItem } from '../types';
-import { cleanSearchTerm, getAllItems as collectItems } from '../lib/ingredients';
+import { getSearchTerms, extractQuantity, getAllItems as collectItems } from '../lib/ingredients';
 
 interface KrogerCheckoutProps {
   dish: Dish | null;
@@ -22,6 +22,17 @@ interface KrogerCheckoutProps {
 
 type Step = 'auth' | 'location' | 'mapping' | 'confirm' | 'done';
 
+interface UnmappedItem {
+  name: string;
+  searchTerm: string;
+  attemptedTerms: string[];
+  isEssential: boolean;
+}
+
+interface MatchedCartItem extends CartItem {
+  matchSource: 'store' | 'catalog';
+}
+
 export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack }: KrogerCheckoutProps) {
   const hasZip = savedZipCode.length === 5;
   const [step, setStep] = useState<Step>(
@@ -29,7 +40,8 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
   );
   const [zipCode, setZipCode] = useState(savedZipCode);
   const [selectedLocation, setSelectedLocation] = useState<KrogerLocation | null>(null);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<MatchedCartItem[]>([]);
+  const [unmappedItems, setUnmappedItems] = useState<UnmappedItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchingLocations, setSearchingLocations] = useState(false);
@@ -83,32 +95,91 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
     setLoading(true);
     setError('');
     const items = getItems();
+
+    // Guard: block if recipe ingredients haven't loaded yet
+    if (dish && (!dish.ingredients || dish.ingredients.length === 0)) {
+      setError('Recipe ingredients are still loading. Please wait and try again.');
+      setLoading(false);
+      setStep('location');
+      return;
+    }
+
     setMappingProgress({ current: 0, total: items.length });
-    const mapped: CartItem[] = [];
+    const mapped: MatchedCartItem[] = [];
+    const unmapped: UnmappedItem[] = [];
+    const recipeItemCount = dish?.ingredients?.length ?? 0;
 
     for (let i = 0; i < items.length; i++) {
-      const term = cleanSearchTerm(items[i]);
+      const terms = getSearchTerms(items[i]);
+      const isEssential = i >= recipeItemCount;
       setMappingProgress({ current: i + 1, total: items.length });
+
+      if (terms.length === 0) continue;
+
+      let found = false;
+
       try {
-        const products = await searchProducts(term, locationId, 1);
-        if (products.length > 0) {
-          const p = products[0];
-          mapped.push({
+        // Try each fallback term with location
+        for (const term of terms) {
+          const products = await searchProducts(term, locationId, 1);
+          if (products.length > 0) {
+            const p = products[0];
+            const qty = isEssential ? 1 : extractQuantity(items[i]);
+            mapped.push({
+              name: items[i],
+              upc: p.upc,
+              quantity: qty,
+              description: p.description,
+              brand: p.brand,
+              matchSource: 'store',
+            });
+            found = true;
+            break;
+          }
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        // Last resort: primary term without locationId
+        if (!found && locationId) {
+          const products = await searchProducts(terms[0], undefined, 1);
+          if (products.length > 0) {
+            const p = products[0];
+            const qty = isEssential ? 1 : extractQuantity(items[i]);
+            mapped.push({
+              name: items[i],
+              upc: p.upc,
+              quantity: qty,
+              description: p.description,
+              brand: p.brand,
+              matchSource: 'catalog',
+            });
+            found = true;
+          }
+        }
+
+        if (!found) {
+          unmapped.push({
             name: items[i],
-            upc: p.upc,
-            quantity: 1,
-            description: p.description,
-            brand: p.brand,
+            searchTerm: terms[0],
+            attemptedTerms: terms,
+            isEssential,
           });
         }
       } catch {
-        // Skip items that fail to map
+        unmapped.push({
+          name: items[i],
+          searchTerm: terms[0],
+          attemptedTerms: terms,
+          isEssential,
+        });
       }
-      // Small delay to respect rate limits
+
+      // Rate limit between ingredients
       if (i < items.length - 1) await new Promise(r => setTimeout(r, 200));
     }
 
     setCartItems(mapped);
+    setUnmappedItems(unmapped);
     setLoading(false);
     setStep('confirm');
   };
@@ -257,19 +328,38 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
             exit={{ opacity: 0, y: -20 }}
           >
             <div className="mb-6">
-              <h2 className="text-2xl font-bold tracking-tight mb-2">{cartItems.length} items ready</h2>
-              <p className="text-[11px] opacity-40">
-                Review and confirm, then checkout on QFC.
-              </p>
+              <h2 className="text-2xl font-bold tracking-tight mb-2">
+                {unmappedItems.length > 0
+                  ? `${cartItems.length} of ${cartItems.length + unmappedItems.length} items matched`
+                  : `${cartItems.length} items ready`}
+              </h2>
+              <p className="text-[11px] opacity-40">Review and confirm, then checkout on QFC.</p>
+              {cartItems.some((item) => item.matchSource === 'catalog') && (
+                <p className="text-[11px] text-amber-700/80 mt-1">
+                  Some items came from Kroger catalog fallback (store stock may vary).
+                </p>
+              )}
             </div>
 
-            <div className="space-y-2 mb-8">
+            <div className="space-y-2 mb-4">
               {cartItems.map((item, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 bg-white border border-black/5 rounded-xl">
                   <Package size={16} className="opacity-20 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.description}</p>
+                    <p className="text-sm font-medium truncate">
+                      {item.description}
+                      {item.quantity > 1 && <span className="opacity-40"> x{item.quantity}</span>}
+                    </p>
                     <p className="text-[10px] opacity-40 truncate">{item.brand} — from: {item.name}</p>
+                    <span
+                      className={`inline-block mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                        item.matchSource === 'catalog'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
+                      {item.matchSource === 'catalog' ? 'Catalog fallback' : 'At your store'}
+                    </span>
                   </div>
                   <button
                     onClick={() => handleRemoveItem(i)}
@@ -281,9 +371,29 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
               ))}
             </div>
 
+            {unmappedItems.length > 0 && (
+              <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-xs font-bold uppercase tracking-widest text-amber-700 mb-2">
+                  Not found — grab these yourself
+                </p>
+                <div className="space-y-1">
+                  {unmappedItems.filter(u => !u.isEssential).map((item, i) => (
+                    <p key={`r-${i}`} className="text-sm text-amber-800">{item.name}</p>
+                  ))}
+                  {unmappedItems.filter(u => u.isEssential).map((item, i) => (
+                    <p key={`e-${i}`} className="text-sm text-amber-800 opacity-70">{item.name} <span className="text-[10px]">(essential)</span></p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {cartItems.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-sm opacity-40 mb-4">No items to add.</p>
+                <p className="text-sm opacity-40 mb-4">
+                  {unmappedItems.length > 0
+                    ? `None of the ${unmappedItems.length} items could be found at this store.`
+                    : 'No items to add.'}
+                </p>
                 <button
                   onClick={onBack}
                   className="px-6 py-3 border border-black/10 rounded-xl text-sm font-bold active:scale-95 transition-all"
