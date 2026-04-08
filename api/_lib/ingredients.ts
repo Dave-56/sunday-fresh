@@ -1,4 +1,4 @@
-import { Dish, EssentialItem } from './types.js';
+import { Dish, EssentialItem, ShoppingIngredient, isStructuredIngredients } from './types.js';
 
 const LEADING_QTY_AND_UNIT_RE =
   /^\s*(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+|[¼½¾⅓⅔⅛⅜⅝⅞])\s*(g|kg|ml|l|cups?|tbsp|tsp|oz|lb|lbs|cloves?|pieces?|cans?|bunch(?:es)?|heads?|stalks?|slices?|pinch|large|medium|small|bottles?|bags?|box(?:es)?|packages?|jars?|packs?)?\b\s*/i;
@@ -106,7 +106,17 @@ export function extractQuantity(ingredient: string): number {
 }
 
 /**
- * Collect all grocery items from a locked dish's ingredients
+ * Build search terms from a structured ShoppingIngredient.
+ * Returns si.searchTerms directly (already ordered by Gemini), capped at 3.
+ */
+export function getSearchTermsFromIntent(si: ShoppingIngredient): string[] {
+  const direct = si.searchTerms.filter(Boolean).slice(0, 3);
+  if (direct.length > 0) return direct;
+  return [si.item].filter(Boolean).slice(0, 3);
+}
+
+/**
+ * Collect all grocery display strings from a locked dish's ingredients
  * and the user's essential items.
  */
 export function getAllItems(
@@ -116,7 +126,11 @@ export function getAllItems(
   const items: string[] = [];
 
   if (dish?.ingredients) {
-    dish.ingredients.forEach(ing => items.push(ing));
+    if (isStructuredIngredients(dish.ingredients)) {
+      dish.ingredients.forEach((ing) => items.push(ing.display));
+    } else {
+      dish.ingredients.forEach((ing) => items.push(ing));
+    }
   }
 
   essentials.forEach(e => {

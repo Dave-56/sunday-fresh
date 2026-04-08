@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, RefreshCcw, Check, ArrowLeft, Loader2, History, Settings as SettingsIcon, ShoppingBasket, ShoppingCart } from 'lucide-react';
-import { Dish, HistoryItem, UserPreferences } from './types';
+import { Dish, HistoryItem, UserPreferences, isShoppingIngredient } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -10,7 +10,7 @@ import Settings from './components/Settings';
 import Vault from './components/Vault';
 import KrogerCheckout from './components/KrogerCheckout';
 import { usePreferences } from './hooks/usePreferences';
-import { buildTeaserPrompt, buildDetailPrompt } from './lib/buildPrompt';
+import { buildTeaserPrompt, buildDetailPrompt, getWeeklyServingsTarget } from './lib/buildPrompt';
 import { setKrogerSession, isKrogerAuthenticated } from './lib/kroger';
 
 declare global {
@@ -131,6 +131,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    // One-time flush: clear stale history with old string[] ingredients format
+    const SCHEMA_VERSION = 'v2-structured-ingredients';
+    if (localStorage.getItem('sunday_schema') !== SCHEMA_VERSION) {
+      localStorage.removeItem('sunday_history');
+      localStorage.setItem('sunday_schema', SCHEMA_VERSION);
+    }
+
     const savedHistory = localStorage.getItem('sunday_history');
     if (savedHistory) {
       const parsedHistory = JSON.parse(savedHistory);
@@ -198,7 +205,21 @@ export default function App() {
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              ingredients: { type: Type.ARRAY, items: { type: Type.STRING } },
+              ingredients: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    display: { type: Type.STRING },
+                    item: { type: Type.STRING },
+                    searchTerms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    forbiddenForms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    qty: { type: Type.NUMBER },
+                    qtyMode: { type: Type.STRING, enum: ['container', 'unit-count', 'single-pack'] },
+                  },
+                  required: ['display', 'item', 'searchTerms', 'qty', 'qtyMode'],
+                },
+              },
               sections: {
                 type: Type.ARRAY,
                 items: {
@@ -282,9 +303,18 @@ export default function App() {
       if (text) {
         const data = JSON.parse(text);
         if (Array.isArray(data)) {
-          setOptions(data);
+          const target = getWeeklyServingsTarget(preferences.householdSize);
+          const normalized = data.map((d: any) => ({
+            ...d,
+            servings: Math.min(
+              target.max,
+              Math.max(target.min, Math.round(Number(d?.servings) || target.target))
+            ),
+          }));
+
+          setOptions(normalized);
           // Start fetching images and details in parallel for each dish
-          data.forEach((dish, i) => {
+          normalized.forEach((dish: Dish, i: number) => {
             fetchDishImage(dish, i);
             fetchDishDetails(dish, i);
           });
@@ -409,6 +439,9 @@ export default function App() {
   }
 
   if (view === 'kroger') {
+    // Wait for preferences to load from localStorage before rendering,
+    // otherwise savedZipCode will be '' and the user sees the zip step again
+    if (!isLoaded) return null;
     return (
       <KrogerCheckout
         dish={lockedDish}
@@ -501,7 +534,7 @@ export default function App() {
                   <ul className="space-y-4 mb-12">
                     {dish.ingredients.map((ing, i) => (
                       <li key={i} className="flex items-start gap-3 text-sm">
-                        <span className="opacity-80">{ing}</span>
+                        <span className="opacity-80">{isShoppingIngredient(ing) ? ing.display : ing}</span>
                       </li>
                     ))}
                   </ul>
@@ -598,12 +631,6 @@ export default function App() {
                   <ShoppingCart size={16} />
                   Add to QFC
                 </button>
-                <button
-                  onClick={() => window.open('https://www.instacart.com', '_blank')}
-                  className="w-full py-3 border border-black/10 text-black/60 rounded-xl font-bold text-[11px] tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  Or use Instacart
-                </button>
               </>
             )}
             <button
@@ -625,7 +652,7 @@ export default function App() {
             </button>
           </div>
         )}
-        <div className="h-12" />
+        <div className={recipeSubView === 'ingredients' ? "h-64" : "h-12"} />
       </div>
     );
   }
@@ -741,12 +768,6 @@ export default function App() {
                 >
                   <ShoppingCart size={16} />
                   Add to QFC
-                </button>
-                <button
-                  onClick={() => window.open('https://www.instacart.com', '_blank')}
-                  className="w-full py-3 border border-black/10 text-black/60 rounded-xl font-bold text-[11px] tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  Or use Instacart
                 </button>
               </div>
             </div>

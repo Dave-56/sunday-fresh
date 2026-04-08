@@ -3,24 +3,50 @@ import { redis } from './redis.js';
 import { KV_KEYS } from './kvSchema.js';
 import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
 import { buildDetailPrompt } from './buildPrompt.js';
-import { getSearchTerms, extractQuantity } from './ingredients.js';
+import { getSearchTerms, getSearchTermsFromIntent } from './ingredients.js';
+import { parseIngredient, shoppingToParsed, rankCandidates, preFilterCandidates, resolveCartQuantity, type ProductCandidate } from './matchScorer.js';
 import {
   getClientToken,
   getUserToken,
   deleteUserSession,
   KROGER_API_BASE,
 } from './krogerServer.js';
-import type { Dish, RecipeSection, IngredientMapping } from './types.js';
+import type { Dish, RecipeSection, ShoppingIngredient, IngredientMapping } from './types.js';
+
+function toProductCandidate(product: any): ProductCandidate {
+  const firstItem = Array.isArray(product?.items) ? product.items[0] : undefined;
+  const size =
+    (typeof firstItem?.size === 'string' && firstItem.size) ||
+    (typeof firstItem?.itemInformation?.size === 'string' && firstItem.itemInformation.size) ||
+    undefined;
+  const soldBy =
+    (typeof firstItem?.soldBy === 'string' && firstItem.soldBy) ||
+    (typeof firstItem?.itemInformation?.soldBy === 'string' && firstItem.itemInformation.soldBy) ||
+    undefined;
+  const rawCount =
+    (typeof firstItem?.count === 'number' && firstItem.count) ||
+    (typeof firstItem?.itemInformation?.count === 'number' && firstItem.itemInformation.count) ||
+    undefined;
+
+  return {
+    upc: product?.upc || '',
+    description: product?.description || '',
+    brand: product?.brand || '',
+    size,
+    soldBy,
+    countPerPack: rawCount,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Result types
 // ---------------------------------------------------------------------------
 export type FillCartResult =
-  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: string[]; sections: RecipeSection[] }; mappings: IngredientMapping[] }
+  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: ShoppingIngredient[]; sections: RecipeSection[] }; mappings: IngredientMapping[] }
   | { ok: false; error: string };
 
 export type SelectionResult =
-  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: string[]; sections: RecipeSection[] }; mappings: IngredientMapping[]; dish: Dish }
+  | { ok: true; itemCount: number; cartResponse: unknown; recipe: { ingredients: ShoppingIngredient[]; sections: RecipeSection[] }; mappings: IngredientMapping[]; dish: Dish }
   | { ok: false; error: string; needsAuth?: boolean; selection?: number; dish?: Dish };
 
 // ---------------------------------------------------------------------------
@@ -43,7 +69,21 @@ export async function fillCart(
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          ingredients: { type: Type.ARRAY, items: { type: Type.STRING } },
+          ingredients: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                display: { type: Type.STRING },
+                item: { type: Type.STRING },
+                searchTerms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                forbiddenForms: { type: Type.ARRAY, items: { type: Type.STRING } },
+                qty: { type: Type.NUMBER },
+                qtyMode: { type: Type.STRING, enum: ['container', 'unit-count', 'single-pack'] },
+              },
+              required: ['display', 'item', 'searchTerms', 'qty', 'qtyMode'],
+            },
+          },
           sections: {
             type: Type.ARRAY,
             items: {
@@ -74,21 +114,22 @@ export async function fillCart(
   const detailText = detailRes.text;
   if (!detailText) throw new Error('Empty detail response from Gemini');
   const detail = JSON.parse(detailText);
-  const ingredients: string[] = detail.ingredients || [];
+  const ingredients: ShoppingIngredient[] = detail.ingredients || [];
   const sections: RecipeSection[] = detail.sections || [];
   const recipe = { ingredients, sections };
 
   // Also add essentials from preferences
   const recipeItemCount = ingredients.length;
-  const allItems: string[] = [...ingredients];
+  const essentialNames: string[] = [];
   if (preferences.essentials) {
     for (const e of preferences.essentials) {
       const qty = parseInt(e.quantity) || 1;
       for (let i = 0; i < qty; i++) {
-        allItems.push(e.name);
+        essentialNames.push(e.name);
       }
     }
   }
+  const totalItemCount = recipeItemCount + essentialNames.length;
 
   // Find nearest store using saved zip code
   let locationId: string | undefined;
@@ -113,18 +154,38 @@ export async function fillCart(
   const mappings: IngredientMapping[] = [];
   const clientToken = await getClientToken();
 
-  for (let i = 0; i < allItems.length; i++) {
-    const terms = getSearchTerms(allItems[i]);
+  for (let i = 0; i < totalItemCount; i++) {
     const isEssential = i >= recipeItemCount;
+
+    // Structured path for recipe ingredients, legacy path for essentials
+    let terms: string[];
+    let parsed: ReturnType<typeof parseIngredient>;
+    let displayName: string;
+    let si: ShoppingIngredient | null = null;
+
+    if (!isEssential) {
+      si = ingredients[i];
+      terms = getSearchTermsFromIntent(si);
+      parsed = shoppingToParsed(si);
+      displayName = si.display;
+    } else {
+      const essentialName = essentialNames[i - recipeItemCount];
+      terms = getSearchTerms(essentialName);
+      parsed = parseIngredient(essentialName);
+      displayName = essentialName;
+    }
+
     if (terms.length === 0) continue;
 
     let matched = false;
     let matchedTerm = terms[0];
 
     try {
-      // Try each fallback term with location
+      // Collect candidates from all search terms (limit=5 each)
+      const candidates: ProductCandidate[] = [];
+
       for (const term of terms) {
-        let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=1`;
+        let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=5`;
         if (locationId) url += `&filter.locationId=${locationId}`;
 
         const prodRes = await fetch(url, {
@@ -133,63 +194,85 @@ export async function fillCart(
 
         if (prodRes.ok) {
           const prodData = await prodRes.json();
-          const product = prodData.data?.[0];
-          if (product?.upc) {
-            const qty = isEssential ? 1 : extractQuantity(allItems[i]);
-            cartItems.push({ upc: product.upc, quantity: qty });
-            mappings.push({
-              ingredient: allItems[i], searchTerm: term, attemptedTerms: terms,
-              krogerProduct: product.description || null,
-              krogerBrand: product.brand || null,
-              upc: product.upc, isEssential,
-            });
-            matched = true;
-            matchedTerm = term;
-            break;
+          for (const p of prodData.data || []) {
+            if (!p?.upc) continue;
+            const existing = candidates.find(c => c.upc === p.upc);
+            const next = toProductCandidate(p);
+            if (!existing) {
+              candidates.push(next);
+            } else {
+              existing.size = existing.size || next.size;
+              existing.soldBy = existing.soldBy || next.soldBy;
+              existing.countPerPack = existing.countPerPack || next.countPerPack;
+            }
           }
         }
         await new Promise((r) => setTimeout(r, 200));
       }
 
-      // Last resort: primary term without locationId
-      if (!matched && locationId) {
-        const url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(terms[0])}&filter.limit=1`;
+      // Fallback: primary term without locationId
+      if (candidates.length === 0 && locationId) {
+        const url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(terms[0])}&filter.limit=5`;
         const prodRes = await fetch(url, {
           headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
         });
         if (prodRes.ok) {
           const prodData = await prodRes.json();
-          const product = prodData.data?.[0];
-          if (product?.upc) {
-            const qty = isEssential ? 1 : extractQuantity(allItems[i]);
-            cartItems.push({ upc: product.upc, quantity: qty });
-            mappings.push({
-              ingredient: allItems[i], searchTerm: terms[0], attemptedTerms: terms,
-              krogerProduct: product.description || null,
-              krogerBrand: product.brand || null,
-              upc: product.upc, isEssential,
-            });
-            matched = true;
+          for (const p of prodData.data || []) {
+            if (!p?.upc) continue;
+            const existing = candidates.find(c => c.upc === p.upc);
+            const next = toProductCandidate(p);
+            if (!existing) {
+              candidates.push(next);
+            } else {
+              existing.size = existing.size || next.size;
+              existing.soldBy = existing.soldBy || next.soldBy;
+              existing.countPerPack = existing.countPerPack || next.countPerPack;
+            }
           }
+        }
+      }
+
+      // Pre-filter forbidden forms for structured ingredients, then score
+      const filtered = si ? preFilterCandidates(candidates, si) : candidates;
+
+      if (filtered.length > 0) {
+        const ranked = rankCandidates(filtered, parsed);
+        const best = ranked[0];
+
+        if (best.matchType !== 'weak') {
+          const qtyDecision = isEssential
+            ? { cartQty: 1, confidence: 'high' as const, rationale: 'essential quantity comes from vault settings' }
+            : resolveCartQuantity(parsed, best);
+          const qty = qtyDecision.cartQty;
+          cartItems.push({ upc: best.upc, quantity: qty });
+          mappings.push({
+            ingredient: displayName, searchTerm: matchedTerm, attemptedTerms: terms,
+            krogerProduct: best.description, krogerBrand: best.brand,
+            upc: best.upc, isEssential,
+            recipeQty: parsed.recipeQty, cartQty: qty,
+            qtyMode: parsed.qtyMode, qtyConfidence: qtyDecision.confidence, qtyRationale: qtyDecision.rationale, matchType: best.matchType,
+          });
+          matched = true;
         }
       }
 
       if (!matched) {
         mappings.push({
-          ingredient: allItems[i], searchTerm: matchedTerm, attemptedTerms: terms,
+          ingredient: displayName, searchTerm: matchedTerm, attemptedTerms: terms,
           krogerProduct: null, krogerBrand: null, upc: null, isEssential,
         });
       }
     } catch (err) {
       console.error(`Product search failed for "${matchedTerm}":`, err);
       mappings.push({
-        ingredient: allItems[i], searchTerm: matchedTerm, attemptedTerms: terms,
+        ingredient: displayName, searchTerm: matchedTerm, attemptedTerms: terms,
         krogerProduct: null, krogerBrand: null, upc: null, isEssential,
       });
     }
 
     // Rate limit: 200ms between ingredients
-    if (i < allItems.length - 1) {
+    if (i < totalItemCount - 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
   }

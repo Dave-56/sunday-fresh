@@ -1,4 +1,5 @@
 import type { Dish, RecipeSection, IngredientMapping } from './types.js';
+import { isShoppingIngredient } from './types.js';
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN!;
 const chatId = () => process.env.TELEGRAM_CHAT_ID!;
@@ -134,6 +135,17 @@ export async function sendCartSummary(
     }
   }
 
+  // Quantity review: low-confidence cart quantity decisions
+  const qtyWarnings = recipeMatched.filter(
+    m => m.qtyConfidence === 'low'
+  );
+  if (qtyWarnings.length > 0) {
+    text += `\n<b>Quantity review</b>\n`;
+    for (const m of qtyWarnings) {
+      text += `  ${esc(m.searchTerm)} — ${esc(m.qtyRationale || `recipe ${m.recipeQty}, cart ${m.cartQty ?? 1}`)}\n`;
+    }
+  }
+
   if (recipeMissed.length > 0) {
     text += `\n<b>Not found — grab these yourself</b>\n`;
     for (const m of recipeMissed) {
@@ -165,6 +177,12 @@ export async function sendCartSummary(
     text = `sunday. — Cart ready! ${recipeMatched.length} of ${totalRecipe} recipe items matched.\n`;
     text += `\n<b>Matched</b>\n` + matchedSection.join('');
     text += `  ... and ${recipeMatched.length - matchedSection.length} more\n`;
+    if (qtyWarnings.length > 0) {
+      text += `\n<b>Quantity review</b>\n`;
+      for (const m of qtyWarnings) {
+        text += `  ${esc(m.searchTerm)} — ${esc(m.qtyRationale || `recipe ${m.recipeQty}, cart ${m.cartQty ?? 1}`)}\n`;
+      }
+    }
     if (recipeMissed.length > 0) {
       text += `\n<b>Not found — grab these yourself</b>\n`;
       for (const m of recipeMissed) {
@@ -189,13 +207,13 @@ export async function sendCartSummary(
  */
 export async function sendRecipeCard(
   dish: Dish,
-  recipe: { ingredients: string[]; sections: RecipeSection[] }
+  recipe: { ingredients: Dish['ingredients']; sections: RecipeSection[] }
 ): Promise<void> {
   const header = `<b>${esc(dish.name.toUpperCase())}</b>\n${esc(dish.cuisine)} — ${dish.difficulty} — ${esc(dish.prepTime)} — ${dish.servings} servings\n`;
 
   let ingredientBlock = `\n<b>Ingredients</b>\n`;
-  for (const ing of recipe.ingredients) {
-    ingredientBlock += `- ${esc(ing)}\n`;
+  for (const ing of recipe.ingredients ?? []) {
+    ingredientBlock += `- ${esc(isShoppingIngredient(ing) ? ing.display : ing)}\n`;
   }
 
   let instructionBlock = '';

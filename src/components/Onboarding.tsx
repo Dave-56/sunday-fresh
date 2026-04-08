@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Check, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, MapPin } from 'lucide-react';
 import { UserPreferences } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -21,6 +21,7 @@ const STEPS = [
   'Restrictions',
   'PrepTime',
   'Variety',
+  'ZipCode',
   'Done'
 ];
 
@@ -33,6 +34,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     prepTime: '',
     variety: '',
     onboardingComplete: false,
+    essentials: [],
+    selectedEssentialCategories: [],
+    zipCode: '',
   });
 
   const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
@@ -60,7 +64,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     if (step === 4) return prefs.restrictions.length > 0;
     if (step === 5) return !!prefs.prepTime;
     if (step === 6) return !!prefs.variety;
-    if (step === 7) return true;
+    if (step === 7) return (prefs.zipCode?.length ?? 0) === 5;
+    if (step === 8) return true;
     return false;
   };
 
@@ -273,6 +278,27 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         );
 
       case 7:
+        return (
+          <div className="px-6">
+            <h2 className="text-2xl font-bold tracking-tight mb-3">What's your zip code?</h2>
+            <p className="text-sm opacity-50 leading-relaxed mb-8">
+              So we can find grocery items at your nearest store.
+            </p>
+            <div className="relative">
+              <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={prefs.zipCode || ''}
+                onChange={(e) => setPrefs(prev => ({ ...prev, zipCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))}
+                placeholder="e.g. 98101"
+                className="w-full pl-11 pr-4 py-4 bg-white border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-300"
+              />
+            </div>
+          </div>
+        );
+
+      case 8:
         return (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <h1 className="text-4xl font-bold tracking-tight mb-4">you're all set.</h1>
