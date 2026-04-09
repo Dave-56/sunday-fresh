@@ -26,6 +26,43 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function formatMinutesToHHMM(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function formatPrepTime(prepTime: string): string {
+  if (!prepTime) return prepTime;
+  const value = prepTime.trim();
+
+  // Already in h:mm or hh:mm form.
+  const hhmm = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (hhmm) {
+    return `${String(Number(hhmm[1])).padStart(2, '0')}:${hhmm[2]}`;
+  }
+
+  let totalMinutes: number | null = null;
+
+  const minuteOnly = value.match(/^(\d+)\s*(m|min|mins|minute|minutes)$/i);
+  if (minuteOnly) {
+    totalMinutes = Number(minuteOnly[1]);
+  } else if (/^\d+$/.test(value)) {
+    totalMinutes = Number(value);
+  } else {
+    const hourMatch = value.match(/(\d+)\s*(h|hr|hrs|hour|hours)\b/i);
+    const minuteMatch = value.match(/(\d+)\s*(m|min|mins|minute|minutes)\b/i);
+    if (hourMatch || minuteMatch) {
+      const hours = hourMatch ? Number(hourMatch[1]) : 0;
+      const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
+      totalMinutes = hours * 60 + minutes;
+    }
+  }
+
+  if (totalMinutes === null || Number.isNaN(totalMinutes)) return prepTime;
+  return formatMinutesToHHMM(totalMinutes);
+}
+
 export default function App() {
   const { preferences, savePreferences, isLoaded, syncToKV } = usePreferences();
   const [view, setView] = useState<'home' | 'recipe' | 'history' | 'settings' | 'vault' | 'kroger'>('home');
@@ -37,6 +74,25 @@ export default function App() {
   const [lockedDish, setLockedDish] = useState<Dish | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [recipeSubView, setRecipeSubView] = useState<'ingredients' | 'instructions'>('ingredients');
+
+  function toSyncHistoryPayload(items: HistoryItem[]): HistoryItem[] {
+    // Keep history lightweight for KV sync: server-side generation only uses dish names.
+    // We intentionally omit large optional fields like imageUrl/ingredients/sections.
+    return items.map((item) => ({
+      week: item.week,
+      date: item.date,
+      dish: {
+        name: item.dish.name,
+        cuisine: item.dish.cuisine,
+        why: item.dish.why,
+        difficulty: item.dish.difficulty,
+        prepTime: item.dish.prepTime,
+        servings: item.dish.servings,
+        type: item.dish.type,
+        servedWith: item.dish.servedWith,
+      },
+    }));
+  }
 
   const calculateStreak = () => {
     if (history.length === 0) return 0;
@@ -336,8 +392,8 @@ export default function App() {
     };
     const newHistory = [newItem, ...history].slice(0, 8);
     setHistory(newHistory);
-    localStorage.setItem('sunday_history', JSON.stringify(newHistory));
-    syncToKV({ history: newHistory });
+    localStorage.setItem('sunday_history', JSON.stringify(toSyncHistoryPayload(newHistory)));
+    syncToKV({ history: toSyncHistoryPayload(newHistory) });
     setLockedDish(selectedDish);
     setView('home');
   };
@@ -487,7 +543,7 @@ export default function App() {
         <div className={`grid ${dish.servedWith?.primary ? 'grid-cols-3' : 'grid-cols-2'} gap-4 mb-12`}>
           <div className="bg-white border border-black/5 p-4 rounded-2xl shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Time</p>
-            <p className="text-sm font-medium">{dish.prepTime}</p>
+            <p className="text-sm font-medium">{formatPrepTime(dish.prepTime)}</p>
           </div>
           <div className="bg-white border border-black/5 p-4 rounded-2xl shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-1">Portions</p>
@@ -871,7 +927,7 @@ export default function App() {
                           {dish.cuisine}
                         </span>
                         <span className="text-[9px] font-bold uppercase tracking-widest opacity-30">
-                          {dish.difficulty} • {dish.prepTime}
+                          {dish.difficulty} • {formatPrepTime(dish.prepTime)}
                         </span>
                       </div>
                       <h3 className="text-xl font-bold tracking-tight leading-tight mb-3">{dish.name}</h3>

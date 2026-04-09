@@ -84,8 +84,13 @@ INSTRUCTION GUIDELINES (MANDATORY):
 Return:
 - ingredients: An array of structured ingredient objects, each with:
   - "display": Emoji-prefixed human-readable string (e.g., "🍅 2 Large Tomatoes, diced"). Scale quantities to the target weekly yield.
-  - "item": The term you would type into a grocery store search bar to find this ingredient — not a description, not a brand, not a preparation method (e.g., "Tomatoes", "Coconut Milk", "Beef Brisket").
-  - "searchTerms": Ordered list of search queries to try in a grocery store, starting with the most specific. Include the item name first, then common alternative names or related products (e.g., ["Scotch Bonnet Peppers", "Habanero Peppers"]).
+  - "item": The core food noun you would look for on a grocery shelf — not a description, not a brand, not a preparation method (e.g., "Tomatoes", "Coconut Milk", "Beef Brisket").
+  - "searchTerms": Ordered list of search queries to type into a grocery store search engine, starting with the most specific product-form term. CRITICAL: generic single-word terms like "Garlic" or "Ginger" return hundreds of irrelevant products (garlic bread, ginger ale, etc.). Always qualify with the product form:
+    - Fresh produce: prefix with "Fresh" or add the produce form (e.g., ["Fresh Garlic", "Garlic Bulbs", "Whole Garlic"] NOT ["Garlic"])
+    - Fresh roots/herbs: always say "Fresh" + the item (e.g., ["Fresh Ginger Root", "Whole Ginger"] NOT ["Ginger"])
+    - Canned goods: include "Canned" or the container (e.g., ["Canned Coconut Milk", "Coconut Milk Can"] NOT ["Coconut Milk"])
+    - Sugars/specialty: use the specific product name (e.g., ["Palm Sugar", "Gula Melaka"] NOT ["Sugar"])
+    - Include 2-3 alternative search terms for substitutes (e.g., ["Scotch Bonnet Peppers", "Habanero Peppers", "Hot Chili Peppers"]).
   - "forbiddenForms": Product forms that would be WRONG for this recipe — forms that change the ingredient fundamentally (e.g., "ground" for whole peppers, "corned" for fresh brisket, "dried" for fresh herbs, "pickled" for raw ginger). Omit if no dangerous forms exist.
   - "qty": Numeric quantity needed (e.g., 2 for "2 cans", 3 for "3 peppers", 1 for "1/2 cup oil").
   - "qtyMode": How quantity maps to grocery cart items. Use "container" if the unit is a package you buy multiples of (cans, jars, bottles, bags, boxes). Use "unit-count" for discrete countable items (peppers, tomatoes, onions). Use "single-pack" for everything else — sub-units (cloves), measurements (cups, tsp), or bulk items where you buy one package regardless of recipe amount (oil, flour, spices).

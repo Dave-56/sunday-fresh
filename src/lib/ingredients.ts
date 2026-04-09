@@ -42,7 +42,10 @@ export function cleanSearchTerm(ingredient: string): string {
  *   "3 cloves Garlic (minced)"
  *     → ["Garlic"]
  */
-export function getSearchTerms(ingredient: string): string[] {
+export function getSearchTerms(
+  ingredient: string,
+  category?: EssentialItem['category']
+): string[] {
   // Strip emojis and leading quantities/units
   const stripped = ingredient
     .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\uFE0F]/gu, '')
@@ -66,9 +69,29 @@ export function getSearchTerms(ingredient: string): string[] {
   // Add simplified fallbacks: last 1-2 words of the primary term (the core noun)
   if (terms.length > 0) {
     const words = terms[0].split(' ');
-    if (words.length > 2) {
+    if (words.length >= 2) {
       const simplified = words.slice(-1).join(' ');
       if (!terms.includes(simplified)) terms.push(simplified);
+    }
+  }
+
+  // Category-aware enrichment for essentials.
+  if (category && terms.length > 0) {
+    const primary = terms[0];
+    const lowerPrimary = primary.toLowerCase();
+    let prefix: string | null = null;
+    if (category === 'Fruits & Veg' || category === 'Proteins') {
+      prefix = 'Fresh';
+    } else if (category === 'Frozen') {
+      prefix = 'Frozen';
+    }
+
+    if (prefix) {
+      const lowerPrefix = `${prefix.toLowerCase()} `;
+      if (!lowerPrimary.startsWith(lowerPrefix)) {
+        const enriched = `${prefix} ${primary}`;
+        if (!terms.includes(enriched)) terms.unshift(enriched);
+      }
     }
   }
 

@@ -4,14 +4,14 @@ import { KV_KEYS } from './kvSchema.js';
 import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
 import { buildDetailPrompt } from './buildPrompt.js';
 import { getSearchTerms, getSearchTermsFromIntent } from './ingredients.js';
-import { parseIngredient, shoppingToParsed, rankCandidates, preFilterCandidates, resolveCartQuantity, type ProductCandidate } from './matchScorer.js';
+import { parseIngredient, shoppingToParsed, rankCandidatesForSelection, preFilterCandidates, type ProductCandidate } from './matchScorer.js';
 import {
   getClientToken,
   getUserToken,
   deleteUserSession,
   KROGER_API_BASE,
 } from './krogerServer.js';
-import type { Dish, RecipeSection, ShoppingIngredient, IngredientMapping } from './types.js';
+import type { Dish, RecipeSection, ShoppingIngredient, IngredientMapping, EssentialItem } from './types.js';
 
 function toProductCandidate(product: any): ProductCandidate {
   const firstItem = Array.isArray(product?.items) ? product.items[0] : undefined;
@@ -36,6 +36,30 @@ function toProductCandidate(product: any): ProductCandidate {
     soldBy,
     countPerPack: rawCount,
   };
+}
+
+const SEARCH_LIMIT_PRIMARY = 12;
+const SEARCH_LIMIT_BROAD = 20;
+const RERANK_MIN_SCORE_FOR_LLM = 60;
+
+function upsertCandidate(list: ProductCandidate[], product: any): void {
+  if (!product?.upc) return;
+  const existing = list.find((c) => c.upc === product.upc);
+  const next = toProductCandidate(product);
+  if (!existing) {
+    list.push(next);
+    return;
+  }
+  existing.size = existing.size || next.size;
+  existing.soldBy = existing.soldBy || next.soldBy;
+  existing.countPerPack = existing.countPerPack || next.countPerPack;
+}
+
+function shouldBroadenBeforeLlm(ranked: ReturnType<typeof rankCandidatesForSelection>): boolean {
+  if (ranked.length === 0) return true;
+  const top = ranked[0];
+  if (top.matchType === 'weak') return true;
+  return top.score < RERANK_MIN_SCORE_FOR_LLM;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,16 +144,16 @@ export async function fillCart(
 
   // Also add essentials from preferences
   const recipeItemCount = ingredients.length;
-  const essentialNames: string[] = [];
+  const essentialEntries: Array<{ name: string; category?: EssentialItem['category'] }> = [];
   if (preferences.essentials) {
     for (const e of preferences.essentials) {
       const qty = parseInt(e.quantity) || 1;
       for (let i = 0; i < qty; i++) {
-        essentialNames.push(e.name);
+        essentialEntries.push({ name: e.name, category: e.category });
       }
     }
   }
-  const totalItemCount = recipeItemCount + essentialNames.length;
+  const totalItemCount = recipeItemCount + essentialEntries.length;
 
   // Find nearest store using saved zip code
   let locationId: string | undefined;
@@ -169,8 +193,9 @@ export async function fillCart(
       parsed = shoppingToParsed(si);
       displayName = si.display;
     } else {
-      const essentialName = essentialNames[i - recipeItemCount];
-      terms = getSearchTerms(essentialName);
+      const essential = essentialEntries[i - recipeItemCount];
+      const essentialName = essential?.name || '';
+      terms = getSearchTerms(essentialName, essential?.category);
       parsed = parseIngredient(essentialName);
       displayName = essentialName;
     }
@@ -181,11 +206,11 @@ export async function fillCart(
     let matchedTerm = terms[0];
 
     try {
-      // Collect candidates from all search terms (limit=5 each)
+      // Collect candidates from all search terms.
       const candidates: ProductCandidate[] = [];
 
       for (const term of terms) {
-        let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=5`;
+        let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=${SEARCH_LIMIT_PRIMARY}`;
         if (locationId) url += `&filter.locationId=${locationId}`;
 
         const prodRes = await fetch(url, {
@@ -195,55 +220,47 @@ export async function fillCart(
         if (prodRes.ok) {
           const prodData = await prodRes.json();
           for (const p of prodData.data || []) {
-            if (!p?.upc) continue;
-            const existing = candidates.find(c => c.upc === p.upc);
-            const next = toProductCandidate(p);
-            if (!existing) {
-              candidates.push(next);
-            } else {
-              existing.size = existing.size || next.size;
-              existing.soldBy = existing.soldBy || next.soldBy;
-              existing.countPerPack = existing.countPerPack || next.countPerPack;
-            }
+            upsertCandidate(candidates, p);
           }
         }
         await new Promise((r) => setTimeout(r, 200));
       }
 
-      // Fallback: primary term without locationId
-      if (candidates.length === 0 && locationId) {
-        const url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(terms[0])}&filter.limit=5`;
-        const prodRes = await fetch(url, {
-          headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
-        });
-        if (prodRes.ok) {
-          const prodData = await prodRes.json();
-          for (const p of prodData.data || []) {
-            if (!p?.upc) continue;
-            const existing = candidates.find(c => c.upc === p.upc);
-            const next = toProductCandidate(p);
-            if (!existing) {
-              candidates.push(next);
-            } else {
-              existing.size = existing.size || next.size;
-              existing.soldBy = existing.soldBy || next.soldBy;
-              existing.countPerPack = existing.countPerPack || next.countPerPack;
+      let filtered = si ? preFilterCandidates(candidates, si) : candidates;
+      let ranked = filtered.length > 0
+        ? rankCandidatesForSelection(filtered, parsed)
+        : [];
+
+      if (locationId && shouldBroadenBeforeLlm(ranked)) {
+        const broadenTerms = Array.from(new Set([parsed.coreItem, ...terms]))
+          .filter(Boolean)
+          .slice(0, 3);
+        for (const term of broadenTerms) {
+          const url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=${SEARCH_LIMIT_BROAD}`;
+          const prodRes = await fetch(url, {
+            headers: { Authorization: `Bearer ${clientToken}`, Accept: 'application/json' },
+          });
+          if (prodRes.ok) {
+            const prodData = await prodRes.json();
+            for (const p of prodData.data || []) {
+              upsertCandidate(candidates, p);
             }
           }
+          await new Promise((r) => setTimeout(r, 200));
         }
+        filtered = si ? preFilterCandidates(candidates, si) : candidates;
+        ranked = filtered.length > 0
+          ? rankCandidatesForSelection(filtered, parsed)
+          : [];
       }
 
-      // Pre-filter forbidden forms for structured ingredients, then score
-      const filtered = si ? preFilterCandidates(candidates, si) : candidates;
-
       if (filtered.length > 0) {
-        const ranked = rankCandidates(filtered, parsed);
         const best = ranked[0];
 
         if (best.matchType !== 'weak') {
           const qtyDecision = isEssential
             ? { cartQty: 1, confidence: 'high' as const, rationale: 'essential quantity comes from vault settings' }
-            : resolveCartQuantity(parsed, best);
+            : best.qtyDecision;
           const qty = qtyDecision.cartQty;
           cartItems.push({ upc: best.upc, quantity: qty });
           mappings.push({

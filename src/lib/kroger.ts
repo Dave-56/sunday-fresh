@@ -72,6 +72,62 @@ export async function searchProducts(
   }));
 }
 
+export interface ProductRerankIngredientIntent {
+  display: string;
+  item: string;
+  searchTerms: string[];
+  forbiddenForms?: string[];
+  qty: number;
+  qtyMode: 'container' | 'unit-count' | 'single-pack';
+}
+
+export interface ProductRerankCandidate {
+  upc: string;
+  description: string;
+  brand: string;
+  size?: string;
+  soldBy?: string;
+  countPerPack?: number;
+}
+
+export interface ProductRerankResponse {
+  decision: 'select' | 'needs_review' | 'no_match';
+  selectedUpc: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+  metadata: {
+    decisionSource: 'llm' | 'fallback' | 'deterministic';
+    latencyMs: number;
+    guardrailOverride?: string;
+  };
+}
+
+export async function rerankProductSelection(
+  ingredient: ProductRerankIngredientIntent,
+  candidates: ProductRerankCandidate[],
+  signal?: AbortSignal
+): Promise<ProductRerankResponse> {
+  const res = await fetch('/api/kroger/products/rerank', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ingredient, candidates }),
+    signal,
+  });
+
+  if (!res.ok) {
+    let detail = `Failed to rerank product candidates (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) detail = String(data.error);
+    } catch {
+      // no-op: keep status-based fallback message
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}
+
 /** Add items to the user's Kroger cart */
 export async function addToCart(
   items: { upc: string; quantity: number }[]
