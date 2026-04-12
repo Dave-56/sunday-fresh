@@ -65,6 +65,8 @@ export interface QuantityResolution {
   cartQty: number;
   confidence: QtyConfidence;
   rationale: string;
+  /** Set when we mapped a count requirement onto a weight-sold produce listing via the produceEachHint heuristic. */
+  inferredProduceEach?: boolean;
 }
 
 export interface RankedCandidateWithQuantity extends ScoredCandidate {
@@ -1019,6 +1021,7 @@ export function resolveCartQuantity(
         cartQty: clampCartQty(requirement.amount),
         confidence: 'medium',
         rationale: 'fresh produce sold by each; preferred count requirement over pack-size metadata',
+        inferredProduceEach: true,
       };
     }
 

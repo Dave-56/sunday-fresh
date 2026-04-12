@@ -1,10 +1,12 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { getGenAIClient } from './genaiClient.js';
 import { redis } from './redis.js';
 import { KV_KEYS } from './kvSchema.js';
 import type { KVPreferences, KVPendingMeals } from './kvSchema.js';
 import { buildDetailPrompt } from './buildPrompt.js';
 import { getSearchTerms, getSearchTermsFromIntent } from './ingredients.js';
-import { parseIngredient, shoppingToParsed, rankCandidatesForSelection, preFilterCandidates, type ProductCandidate } from './matchScorer.js';
+import { parseIngredient, shoppingToParsed, rankCandidatesForSelection, preFilterCandidates, type ProductCandidate, type StructuredIngredientIntent } from './matchScorer.js';
+import { selectCandidateWithRerank } from './candidateSelector.js';
 import {
   getClientToken,
   getUserToken,
@@ -41,6 +43,31 @@ function toProductCandidate(product: any): ProductCandidate {
 const SEARCH_LIMIT_PRIMARY = 12;
 const SEARCH_LIMIT_BROAD = 20;
 const RERANK_MIN_SCORE_FOR_LLM = 60;
+
+const ENABLE_LLM_RERANK_TG = (() => {
+  const raw = String(process.env.ENABLE_LLM_RERANK_TG || '').toLowerCase();
+  return raw === '1' || raw === 'true';
+})();
+const ENABLE_LLM_RERANK_TG_ESSENTIALS = (() => {
+  const raw = String(process.env.ENABLE_LLM_RERANK_TG_ESSENTIALS || '').toLowerCase();
+  return raw === '1' || raw === 'true';
+})();
+const MAX_LLM_RERANK_CALLS_TG = (() => {
+  const raw = parseInt(process.env.MAX_LLM_RERANK_CALLS_TG || '', 10);
+  return Number.isFinite(raw) ? raw : 6;
+})();
+const LLM_SCORE_MIN = 40;
+const LLM_SCORE_MAX = 80;
+
+function shouldTryLlmForTopCandidate(
+  top: ReturnType<typeof rankCandidatesForSelection>[number] | undefined
+): boolean {
+  if (!top) return false;
+  if (top.matchType === 'weak') return false;
+  const inAmbiguousBand = top.score >= LLM_SCORE_MIN && top.score <= LLM_SCORE_MAX;
+  const needsReviewSignal = top.matchType === 'substitute' || top.qtyDecision.confidence !== 'high';
+  return inAmbiguousBand || needsReviewSignal;
+}
 
 function upsertCandidate(list: ProductCandidate[], product: any): void {
   if (!product?.upc) return;
@@ -82,11 +109,11 @@ export async function fillCart(
   userToken: string
 ): Promise<FillCartResult> {
   // Generate full recipe details
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const ai = getGenAIClient();
   const detailPrompt = buildDetailPrompt(dish, preferences);
 
   const detailRes = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: process.env.RECIPE_GENERATION_MODEL || 'gemini-3-flash-preview',
     contents: detailPrompt,
     config: {
       responseMimeType: 'application/json',
@@ -177,6 +204,7 @@ export async function fillCart(
   const cartItems: { upc: string; quantity: number }[] = [];
   const mappings: IngredientMapping[] = [];
   const clientToken = await getClientToken();
+  let llmCallsUsed = 0;
 
   for (let i = 0; i < totalItemCount; i++) {
     const isEssential = i >= recipeItemCount;
@@ -255,12 +283,77 @@ export async function fillCart(
       }
 
       if (filtered.length > 0) {
-        const best = ranked[0];
+        let best: typeof ranked[0] | undefined = ranked[0];
+        let forceNeedsReview = false;
+        let decisionSource: IngredientMapping['decisionSource'] = 'deterministic';
+        let decisionReason: string | undefined;
+        let guardrailOverride: string | undefined;
 
-        if (best.matchType !== 'weak') {
+        // Build intent for LLM reranker
+        const llmIntent: StructuredIngredientIntent | null = si || (best ? {
+          display: displayName,
+          item: parsed.coreItem || displayName,
+          searchTerms: terms.length > 0 ? terms : [parsed.coreItem || displayName],
+          qty: parsed.recipeQty,
+          qtyMode: parsed.qtyMode,
+        } : null);
+
+        const shouldTryLlm =
+          !!llmIntent &&
+          ENABLE_LLM_RERANK_TG &&
+          ranked.length > 0 &&
+          shouldTryLlmForTopCandidate(ranked[0]) &&
+          (!isEssential || ENABLE_LLM_RERANK_TG_ESSENTIALS);
+
+        if (shouldTryLlm) {
+          if (llmCallsUsed >= MAX_LLM_RERANK_CALLS_TG) {
+            decisionSource = 'fallback';
+            decisionReason = 'LLM budget cap reached for this cart fill; deterministic selection used.';
+            guardrailOverride = 'llm_budget_cap';
+          } else {
+            try {
+              const rerankResult = await selectCandidateWithRerank(
+                llmIntent!,
+                filtered,
+                {
+                  enableLlm: true,
+                  llmTimeoutMs: parseInt(process.env.LLM_RERANK_TIMEOUT_MS || '', 10) || 7000,
+                  requestId: `tg_${i}`,
+                }
+              );
+              llmCallsUsed += 1;
+
+              decisionSource = rerankResult.metadata.decisionSource;
+              decisionReason = rerankResult.reason;
+              guardrailOverride = rerankResult.metadata.guardrailOverride;
+
+              if (rerankResult.decision === 'no_match') {
+                best = undefined;
+              } else if (rerankResult.selectedUpc) {
+                const selected = ranked.find((r) => r.upc === rerankResult.selectedUpc);
+                if (selected) best = selected;
+              }
+
+              if (rerankResult.decision === 'needs_review') {
+                forceNeedsReview = true;
+              }
+            } catch (err: any) {
+              decisionSource = 'fallback';
+              decisionReason = err?.message || 'LLM rerank unavailable; deterministic selection used.';
+              guardrailOverride = 'llm_error';
+            }
+          }
+        }
+
+        if (best && best.matchType !== 'weak') {
           const qtyDecision = isEssential
             ? { cartQty: 1, confidence: 'high' as const, rationale: 'essential quantity comes from vault settings' }
             : best.qtyDecision;
+          // Guardrail: low qty confidence or LLM needs_review → treat as substitute
+          const effectiveMatchType: typeof best.matchType =
+            !isEssential && (qtyDecision.confidence === 'low' || forceNeedsReview)
+              ? 'substitute'
+              : best.matchType;
           const qty = qtyDecision.cartQty;
           cartItems.push({ upc: best.upc, quantity: qty });
           mappings.push({
@@ -268,7 +361,9 @@ export async function fillCart(
             krogerProduct: best.description, krogerBrand: best.brand,
             upc: best.upc, isEssential,
             recipeQty: parsed.recipeQty, cartQty: qty,
-            qtyMode: parsed.qtyMode, qtyConfidence: qtyDecision.confidence, qtyRationale: qtyDecision.rationale, matchType: best.matchType,
+            qtyMode: parsed.qtyMode, qtyConfidence: qtyDecision.confidence, qtyRationale: qtyDecision.rationale,
+            matchType: effectiveMatchType,
+            decisionSource, decisionReason, guardrailOverride,
           });
           matched = true;
         }

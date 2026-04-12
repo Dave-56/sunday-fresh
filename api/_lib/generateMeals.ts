@@ -6,6 +6,7 @@ import type { KVPreferences, KVHistory, KVPendingMeals } from './kvSchema.js';
 import { buildTeaserPrompt } from './buildPrompt.js';
 import { sendMealOptions } from './notifier.js';
 import type { Dish } from './types.js';
+import { buildFoodImagePrompt } from '../../shared/imagePrompt.js';
 
 export interface GenerateResult {
   dishes: Dish[];
@@ -91,7 +92,7 @@ export async function generateAndSendMeals(): Promise<GenerateResult> {
           contents: {
             parts: [
               {
-                text: `A museum-grade professional editorial food photograph of ${dish.name} (${dish.cuisine})${dish.servedWith ? `, served with ${dish.servedWith.primary}` : ''}. Top-down aerial view (flat lay) on a perfectly clean, solid minimalist background. Vibrant colors, natural bright lighting, macro textures. Everything must be fully visible within the frame — no cropping, nothing cut off at the edges. All items centered in the composition with generous padding from the edges. Served in elegant, modern ceramic bowls or plates. STRICT MINIMALISM: No scattered garnishes, no loose herbs, no napkins, no cutlery. Only the food vessels and their contents. The food is the absolute hero. High-end culinary magazine style. No people.`,
+                text: buildFoodImagePrompt(dish),
               },
             ],
           },

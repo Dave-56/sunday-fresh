@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { getGenAIClient } from './genaiClient.js';
 import {
   preFilterCandidates,
   rankCandidatesForSelection,
@@ -7,16 +8,6 @@ import {
   type StructuredIngredientIntent,
   type RankedCandidateWithQuantity,
 } from './matchScorer.js';
-
-// Reuse a single GoogleGenAI client to avoid per-call TLS/connection overhead.
-let _genaiClient: GoogleGenAI | null = null;
-function getGenAIClient(): GoogleGenAI {
-  if (!process.env.GEMINI_API_KEY) throw new Error('Missing GEMINI_API_KEY');
-  if (!_genaiClient) {
-    _genaiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  }
-  return _genaiClient;
-}
 import {
   classifyIngredientClass,
   bucketProductCandidate,
@@ -154,6 +145,19 @@ function logRerankDebug(
   console.log(`[kroger-rerank] ${JSON.stringify(logPayload)}`);
 }
 
+const CONFIDENCE_RANK: Record<SelectionResult['confidence'], number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+function clampConfidenceByQty(
+  requested: SelectionResult['confidence'],
+  qty: SelectionResult['confidence']
+): SelectionResult['confidence'] {
+  return CONFIDENCE_RANK[requested] <= CONFIDENCE_RANK[qty] ? requested : qty;
+}
+
 function finalizeDecision(
   candidate: RankedCandidateWithQuantity | null,
   source: DecisionSource,
@@ -208,12 +212,36 @@ function finalizeDecision(
     };
   }
 
+  // Guardrail: we inferred a count→each mapping onto a weight-sold produce
+  // listing (e.g. recipe asks for 5 red onions, product is "1 lb" sold by
+  // weight). The heuristic is usually right for Kroger's loose produce, but
+  // it's ambiguous enough that the user should confirm the count rather than
+  // silently order 5 lbs.
+  if (candidate.qtyDecision.inferredProduceEach) {
+    return {
+      decision: 'needs_review',
+      selectedUpc: candidate.upc,
+      confidence: 'medium',
+      reason:
+        reasonOverride ??
+        `Confirm count interpretation: ${candidate.qtyDecision.rationale}`,
+      metadata: {
+        decisionSource: source,
+        latencyMs: Date.now() - startedAt,
+        guardrailOverride: guardrailOverride ?? 'count_to_weight_inferred',
+      },
+    };
+  }
+
   // Guardrail: substitute matches require review.
   if (candidate.matchType === 'substitute') {
     return {
       decision: 'needs_review',
       selectedUpc: candidate.upc,
-      confidence: confidenceOverride ?? 'medium',
+      confidence: clampConfidenceByQty(
+        confidenceOverride ?? 'medium',
+        candidate.qtyDecision.confidence
+      ),
       reason:
         reasonOverride ??
         'Closest product is a substitute and needs confirmation.',
@@ -225,10 +253,16 @@ function finalizeDecision(
     };
   }
 
+  // Final safety net: never let a product-level confidence exceed the
+  // quantity confidence. If the LLM is "high" on identity but qty only
+  // resolved to "medium", the final answer is at most medium.
   return {
     decision: 'select',
     selectedUpc: candidate.upc,
-    confidence: confidenceOverride ?? 'high',
+    confidence: clampConfidenceByQty(
+      confidenceOverride ?? 'high',
+      candidate.qtyDecision.confidence
+    ),
     reason: reasonOverride ?? 'Best exact/close candidate selected.',
     metadata: {
       decisionSource: source,

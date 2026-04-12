@@ -92,6 +92,12 @@ export interface IngredientMapping {
   qtyRationale?: string;
   /** How confident the match is */
   matchType?: 'exact' | 'close' | 'substitute' | 'weak';
+  /** How the candidate was selected */
+  decisionSource?: 'llm' | 'fallback' | 'deterministic';
+  /** Reason for the selection decision */
+  decisionReason?: string;
+  /** Guardrail that triggered (e.g. llm_timeout, substitute_match) */
+  guardrailOverride?: string;
 }
 
 export interface ReconciliationResult {

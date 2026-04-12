@@ -9,6 +9,7 @@ import Onboarding from './components/Onboarding';
 import Settings from './components/Settings';
 import Vault from './components/Vault';
 import KrogerCheckout from './components/KrogerCheckout';
+import { buildFoodImagePrompt } from '../shared/imagePrompt';
 import { usePreferences } from './hooks/usePreferences';
 import { buildTeaserPrompt, buildDetailPrompt, getWeeklyServingsTarget } from './lib/buildPrompt';
 import { setKrogerSession, isKrogerAuthenticated } from './lib/kroger';
@@ -191,6 +192,7 @@ export default function App() {
     const SCHEMA_VERSION = 'v2-structured-ingredients';
     if (localStorage.getItem('sunday_schema') !== SCHEMA_VERSION) {
       localStorage.removeItem('sunday_history');
+      localStorage.removeItem('sunday_locked_dish');
       localStorage.setItem('sunday_schema', SCHEMA_VERSION);
     }
 
@@ -198,12 +200,24 @@ export default function App() {
     if (savedHistory) {
       const parsedHistory = JSON.parse(savedHistory);
       setHistory(parsedHistory);
-      
-      // Restore locked dish if it exists for the current week
-      const currentWeek = getWeekRange();
-      const currentWeekItem = parsedHistory.find((item: any) => item.week === currentWeek);
-      if (currentWeekItem) {
-        setLockedDish(currentWeekItem.dish);
+    }
+
+    // Restore locked dish from its own key (keeps full dish including imageUrl,
+    // ingredients, and sections — stripped from sunday_history to stay within
+    // localStorage quota).
+    const currentWeek = getWeekRange();
+    const savedLocked = localStorage.getItem('sunday_locked_dish');
+    if (savedLocked) {
+      try {
+        const parsed = JSON.parse(savedLocked) as { week: string; dish: Dish };
+        if (parsed.week === currentWeek && parsed.dish) {
+          setLockedDish(parsed.dish);
+          return;
+        }
+        // Stale entry from a previous week — drop it.
+        localStorage.removeItem('sunday_locked_dish');
+      } catch {
+        localStorage.removeItem('sunday_locked_dish');
       }
     }
   }, []);
@@ -221,7 +235,7 @@ export default function App() {
         model: 'gemini-3.1-flash-image-preview',
         contents: {
           parts: [
-            { text: `A museum-grade professional editorial food photograph of ${dish.name} (${dish.cuisine}). Top-down aerial view (flat lay) on a perfectly clean, solid minimalist background. Vibrant colors, natural bright lighting, macro textures. Served in a single elegant, modern ceramic bowl or plate.${dish.servedWith?.primary ? ` A small secondary bowl of ${dish.servedWith.primary} is positioned beside the main dish, clearly subordinate.` : ''} STRICT MINIMALISM: No side garnishes, no lime wedges, no scattered herbs, no side piles of ingredients, no napkins, no cutlery. Only the main dish vessel${dish.servedWith?.primary ? ' and its accompaniment' : ''} and its contents. The food is the absolute hero. High-end culinary magazine style. No people.` },
+            { text: buildFoodImagePrompt(dish) },
           ],
         },
         config: {
@@ -394,6 +408,12 @@ export default function App() {
     setHistory(newHistory);
     localStorage.setItem('sunday_history', JSON.stringify(toSyncHistoryPayload(newHistory)));
     syncToKV({ history: toSyncHistoryPayload(newHistory) });
+    // Persist the full locked dish (image, ingredients, sections) separately so
+    // a single recipe fits in localStorage without blowing the quota.
+    localStorage.setItem(
+      'sunday_locked_dish',
+      JSON.stringify({ week: newItem.week, dish: selectedDish })
+    );
     setLockedDish(selectedDish);
     setView('home');
   };
@@ -829,10 +849,11 @@ export default function App() {
             </div>
 
             <div className="text-center">
-              <button 
+              <button
                 onClick={() => {
                   setLockedDish(null);
-                  // Optionally remove from history if they want to "truly" reset, 
+                  localStorage.removeItem('sunday_locked_dish');
+                  // Optionally remove from history if they want to "truly" reset,
                   // but usually just clearing the lock is enough to go back to selection.
                 }}
                 className="text-[10px] font-bold uppercase tracking-widest opacity-30 hover:opacity-100 transition-opacity"

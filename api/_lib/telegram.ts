@@ -122,23 +122,36 @@ export async function sendCartSummary(
   mappings: IngredientMapping[],
   itemCount: number
 ): Promise<void> {
-  const recipeMatched = mappings.filter(m => m.upc && !m.isEssential);
-  const recipeMissed = mappings.filter(m => !m.upc && !m.isEssential);
-  const totalRecipe = recipeMatched.length + recipeMissed.length;
+  const allRecipe = mappings.filter(m => !m.isEssential);
+  const recipeExact = allRecipe.filter(m => m.upc && m.matchType !== 'substitute');
+  const recipeSubs = allRecipe.filter(m => m.upc && m.matchType === 'substitute');
+  const recipeMissed = allRecipe.filter(m => !m.upc);
+  const totalRecipe = allRecipe.length;
+  const totalMatched = recipeExact.length + recipeSubs.length;
 
-  let text = `sunday. — Cart ready! ${recipeMatched.length} of ${totalRecipe} recipe items matched.\n`;
+  let text = `sunday. — Cart ready! ${totalMatched} of ${totalRecipe} recipe items matched.\n`;
 
-  if (recipeMatched.length > 0) {
+  if (recipeExact.length > 0) {
     text += `\n<b>Matched</b>\n`;
-    for (const m of recipeMatched) {
+    for (const m of recipeExact) {
       text += `  ${esc(m.searchTerm)} → ${esc(m.krogerProduct!)}${m.krogerBrand ? ` (${esc(m.krogerBrand)})` : ''}\n`;
     }
   }
 
-  // Quantity review: low-confidence cart quantity decisions
-  const qtyWarnings = recipeMatched.filter(
-    m => m.qtyConfidence === 'low'
-  );
+  if (recipeSubs.length > 0) {
+    text += `\n<b>Check these picks</b>\n`;
+    for (const m of recipeSubs) {
+      const hint = m.guardrailOverride === 'llm_timeout' || m.guardrailOverride === 'llm_error'
+        ? " — best guess, couldn't verify"
+        : m.qtyConfidence === 'low'
+          ? ` — recipe needs ${m.recipeQty}, cart has ${m.cartQty ?? 1}`
+          : ' — close but not exact';
+      text += `  ${esc(m.ingredient)} → ${esc(m.krogerProduct!)}${esc(hint)}\n`;
+    }
+  }
+
+  // Quantity review: low-confidence qty on exact/close matches (not already in subs)
+  const qtyWarnings = recipeExact.filter(m => m.qtyConfidence === 'low');
   if (qtyWarnings.length > 0) {
     text += `\n<b>Quantity review</b>\n`;
     for (const m of qtyWarnings) {
@@ -165,29 +178,27 @@ export async function sendCartSummary(
   // Telegram 4096 char limit — truncate matched list if needed
   if (text.length > 4096) {
     const overflow = text.length - 4000;
-    const matchedSection = recipeMatched.map(
+    const matchedLines = recipeExact.map(
       m => `  ${esc(m.searchTerm)} → ${esc(m.krogerProduct!)}${m.krogerBrand ? ` (${esc(m.krogerBrand)})` : ''}\n`
     );
-    // Remove lines from end of matched section to fit
     let removed = 0;
-    while (matchedSection.length > 0 && removed < overflow) {
-      removed += matchedSection.pop()!.length;
+    while (matchedLines.length > 0 && removed < overflow) {
+      removed += matchedLines.pop()!.length;
     }
-    // Rebuild
-    text = `sunday. — Cart ready! ${recipeMatched.length} of ${totalRecipe} recipe items matched.\n`;
-    text += `\n<b>Matched</b>\n` + matchedSection.join('');
-    text += `  ... and ${recipeMatched.length - matchedSection.length} more\n`;
+    // Rebuild with truncated matched section
+    text = `sunday. — Cart ready! ${totalMatched} of ${totalRecipe} recipe items matched.\n`;
+    if (matchedLines.length > 0) {
+      text += `\n<b>Matched</b>\n` + matchedLines.join('');
+      text += `  ... and ${recipeExact.length - matchedLines.length} more\n`;
+    }
+    if (recipeSubs.length > 0) {
+      text += `\n<b>Check these picks</b> (${recipeSubs.length} items)\n`;
+    }
     if (qtyWarnings.length > 0) {
-      text += `\n<b>Quantity review</b>\n`;
-      for (const m of qtyWarnings) {
-        text += `  ${esc(m.searchTerm)} — ${esc(m.qtyRationale || `recipe ${m.recipeQty}, cart ${m.cartQty ?? 1}`)}\n`;
-      }
+      text += `\n<b>Quantity review</b> (${qtyWarnings.length} items)\n`;
     }
     if (recipeMissed.length > 0) {
-      text += `\n<b>Not found — grab these yourself</b>\n`;
-      for (const m of recipeMissed) {
-        text += `  ${esc(m.ingredient)}\n`;
-      }
+      text += `\n<b>Not found</b> (${recipeMissed.length} items)\n`;
     }
     if (essentialsTotal > 0) {
       text += `\n+ ${essentialsMatched} of ${essentialsTotal} essentials added`;

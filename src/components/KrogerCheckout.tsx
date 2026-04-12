@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ShoppingCart, Check, Loader2, LogIn, ChevronRight, X, Package, AlertTriangle } from 'lucide-react';
 import {
   isKrogerAuthenticated,
+  checkAuthStatus,
   getLoginUrl,
   searchLocations,
   searchProducts,
@@ -68,6 +69,22 @@ interface MappingRunSummary {
   topReasons: Array<{ reason: string; count: number }>;
 }
 
+interface CheckoutDraftV1 {
+  draftVersion: number;
+  createdAt: number;
+  dishKey: string;
+  zip: string;
+  locationId?: string;
+  cartFingerprint: string;
+  cartItems: MatchedCartItem[];
+  unmappedItems: UnmappedItem[];
+  approvedSubstituteUpcs: string[];
+}
+
+const CHECKOUT_DRAFT_KEY = 'kroger_checkout_draft_v1';
+const CHECKOUT_DRAFT_VERSION = 1;
+const CHECKOUT_DRAFT_MAX_AGE_MS = 30 * 60 * 1000;
+
 const ENABLE_LLM_RERANK_WEB =
   String((import.meta as any).env?.VITE_ENABLE_LLM_RERANK_WEB || '').toLowerCase() === 'true' ||
   String((import.meta as any).env?.VITE_ENABLE_LLM_RERANK_WEB || '') === '1';
@@ -128,6 +145,7 @@ function getConversationalReason(item: MatchedCartItem): string {
   const isTimeout = item.guardrailOverride === 'llm_timeout';
   const isError = item.guardrailOverride === 'llm_error' || item.guardrailOverride === 'client_rerank_error';
   const isSub = item.guardrailOverride === 'substitute_match';
+  const isCountToWeight = item.guardrailOverride === 'count_to_weight_inferred';
 
   if (isTimeout || isError) {
     if (qtyOff) return `Best guess — couldn't verify. Recipe needs ${item.recipeQty}, got ${item.quantity}.`;
@@ -135,6 +153,9 @@ function getConversationalReason(item: MatchedCartItem): string {
   }
   if (qtyOff) {
     return `Right product, wrong amount — recipe needs ${item.recipeQty} but cart has ${item.quantity}.`;
+  }
+  if (isCountToWeight) {
+    return `Sold by weight — confirm you want ${item.recipeQty} loose, not ${item.recipeQty} lbs.`;
   }
   if (isSub) {
     return "Close but not exact — check it's the right variant.";
@@ -191,7 +212,12 @@ function buildMappingRunSummary(
     else if (source === 'fallback') decisionSources.fallback += 1;
     else decisionSources.unknown += 1;
 
-    if (item.qtyConfidence === 'low') lowQtyConfidence += 1;
+    if (
+      item.qtyConfidence === 'low' ||
+      item.guardrailOverride === 'count_to_weight_inferred'
+    ) {
+      lowQtyConfidence += 1;
+    }
 
     if (item.guardrailOverride) {
       guardrailOverrides[item.guardrailOverride] = (guardrailOverrides[item.guardrailOverride] || 0) + 1;
@@ -237,6 +263,49 @@ function persistMappingRun(summary: MappingRunSummary): void {
     localStorage.setItem(key, JSON.stringify(next));
   } catch {
     // Best-effort only.
+  }
+}
+
+function buildDishKey(dish: Dish | null): string {
+  if (!dish) return '';
+  return [
+    dish.name.trim().toLowerCase(),
+    dish.cuisine.trim().toLowerCase(),
+    dish.type,
+    String(dish.servings),
+  ].join('::');
+}
+
+function buildCartFingerprint(items: Array<{ upc: string; quantity: number }>): string {
+  return items
+    .map((item) => `${item.upc}:${item.quantity}`)
+    .sort()
+    .join('|');
+}
+
+function readCheckoutDraft(): CheckoutDraftV1 | null {
+  try {
+    const raw = localStorage.getItem(CHECKOUT_DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as CheckoutDraftV1;
+  } catch {
+    return null;
+  }
+}
+
+function writeCheckoutDraft(draft: CheckoutDraftV1): void {
+  try {
+    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // best effort
+  }
+}
+
+function clearCheckoutDraft(): void {
+  try {
+    localStorage.removeItem(CHECKOUT_DRAFT_KEY);
+  } catch {
+    // best effort
   }
 }
 
@@ -326,20 +395,37 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
   const [submittedCount, setSubmittedCount] = useState(0);
   const [runSummary, setRunSummary] = useState<MappingRunSummary | null>(null);
   const [showRunSummary, setShowRunSummary] = useState(false);
-
-  // Auto-start mapping when authenticated
-  useEffect(() => {
-    if (step === 'mapping' && !loading && cartItems.length === 0) {
-      startMapping();
-    }
-  }, []);
+  const [draftLocationId, setDraftLocationId] = useState<string | undefined>(undefined);
+  const [bootstrapping, setBootstrapping] = useState(true);
 
   // Collect all grocery items to map
   const getItems = () => collectItems(dish, essentials);
 
+  const buildDraftFromState = (locationId?: string): CheckoutDraftV1 | null => {
+    if (!dish || cartItems.length === 0) return null;
+    return {
+      draftVersion: CHECKOUT_DRAFT_VERSION,
+      createdAt: Date.now(),
+      dishKey: buildDishKey(dish),
+      zip: savedZipCode,
+      locationId,
+      cartFingerprint: buildCartFingerprint(cartItems),
+      cartItems,
+      unmappedItems,
+      approvedSubstituteUpcs,
+    };
+  };
+
+  const persistDraftFromState = (locationId?: string) => {
+    const draft = buildDraftFromState(locationId);
+    if (!draft) return;
+    writeCheckoutDraft(draft);
+  };
+
   const handleLogin = async () => {
     setLoading(true);
     try {
+      persistDraftFromState(draftLocationId);
       const url = await getLoginUrl();
       window.location.href = url;
     } catch (err: any) {
@@ -348,21 +434,25 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
     }
   };
 
-  const startMapping = async () => {
+  const resolvePreferredLocationId = async (): Promise<string | undefined> => {
+    if (savedZipCode.length !== 5) return undefined;
+    try {
+      const locs = await searchLocations(savedZipCode);
+      if (locs.length > 0) return locs[0].locationId;
+    } catch {
+      // Continue without location — will search catalog
+    }
+    return undefined;
+  };
+
+  const startMapping = async (prefetchedLocationId?: string) => {
     setLoading(true);
     setError('');
 
     // Look up nearest store from saved zip
-    let locationId: string | undefined;
-    if (savedZipCode.length === 5) {
-      try {
-        const locs = await searchLocations(savedZipCode);
-        if (locs.length > 0) {
-          locationId = locs[0].locationId;
-        }
-      } catch {
-        // Continue without location — will search catalog
-      }
+    let locationId: string | undefined = prefetchedLocationId;
+    if (!locationId) {
+      locationId = await resolvePreferredLocationId();
     }
 
     await mapProducts(locationId);
@@ -579,6 +669,18 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
     setCartItems(mapped);
     setUnmappedItems(unmapped);
     setApprovedSubstituteUpcs([]);
+    setDraftLocationId(locationId);
+    writeCheckoutDraft({
+      draftVersion: CHECKOUT_DRAFT_VERSION,
+      createdAt: Date.now(),
+      dishKey: buildDishKey(dish),
+      zip: savedZipCode,
+      locationId,
+      cartFingerprint: buildCartFingerprint(mapped),
+      cartItems: mapped,
+      unmappedItems: unmapped,
+      approvedSubstituteUpcs: [],
+    });
     const summary = buildMappingRunSummary(
       dish?.name || 'Unknown dish',
       items.length,
@@ -592,14 +694,108 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
     setStep('confirm');
   };
 
+  const getDraftInvalidReason = (
+    draft: CheckoutDraftV1,
+    currentLocationId?: string
+  ): string | null => {
+    if (draft.draftVersion !== CHECKOUT_DRAFT_VERSION) return 'version_mismatch';
+    if (Date.now() - draft.createdAt > CHECKOUT_DRAFT_MAX_AGE_MS) return 'expired';
+    if (draft.dishKey !== buildDishKey(dish)) return 'dish_mismatch';
+    if (draft.zip !== savedZipCode) return 'zip_mismatch';
+    if (buildCartFingerprint(draft.cartItems) !== draft.cartFingerprint) return 'fingerprint_mismatch';
+    if (draft.locationId && currentLocationId && draft.locationId !== currentLocationId) return 'store_mismatch';
+    if (!Array.isArray(draft.cartItems) || draft.cartItems.length === 0) return 'empty_cart';
+    return null;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrapCheckout = async () => {
+      try {
+        const hasSession = isKrogerAuthenticated();
+        if (!hasSession) {
+          if (!cancelled) {
+            setStep('auth');
+          }
+          return;
+        }
+
+        const isSessionValid = await checkAuthStatus();
+        if (!isSessionValid) {
+          clearCheckoutDraft();
+          if (!cancelled) {
+            setStep('auth');
+          }
+          return;
+        }
+
+        const currentLocationId = await resolvePreferredLocationId();
+        const draft = readCheckoutDraft();
+        if (draft) {
+          const invalidReason = getDraftInvalidReason(draft, currentLocationId);
+          if (!invalidReason) {
+            if (!cancelled) {
+              setCartItems(draft.cartItems);
+              setUnmappedItems(draft.unmappedItems || []);
+              setApprovedSubstituteUpcs(draft.approvedSubstituteUpcs || []);
+              setDraftLocationId(draft.locationId);
+              setStep('confirm');
+              setLoading(false);
+            }
+            return;
+          }
+          clearCheckoutDraft();
+        }
+
+        if (!cancelled) {
+          setStep('mapping');
+          setBootstrapping(false);
+          await startMapping(currentLocationId);
+        }
+      } catch {
+        clearCheckoutDraft();
+        if (!cancelled) {
+          setError('Could not verify QFC session. Please sign in again.');
+          setStep('auth');
+        }
+      } finally {
+        if (!cancelled) {
+          setBootstrapping(false);
+        }
+      }
+    };
+
+    bootstrapCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (step !== 'confirm' || cartItems.length === 0) return;
+    persistDraftFromState(draftLocationId);
+  }, [step, cartItems, unmappedItems, approvedSubstituteUpcs, draftLocationId, dish, savedZipCode]);
+
   const handleRemoveItem = (idx: number) => {
     setCartItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleStartOver = async () => {
+    clearCheckoutDraft();
+    setApprovedSubstituteUpcs([]);
+    setCartItems([]);
+    setUnmappedItems([]);
+    setStep('mapping');
+    await startMapping();
   };
 
   const handleAddToCart = async () => {
     // Re-check auth right before submitting — session may have been
     // cleared (e.g. browser data wipe) since the component mounted
     if (!isKrogerAuthenticated()) {
+      persistDraftFromState(draftLocationId);
       setError('');
       setStep('auth');
       return;
@@ -618,10 +814,12 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
       }
       await addToCart(items);
       setSubmittedCount(items.length);
+      clearCheckoutDraft();
       setStep('done');
     } catch (err: any) {
       // Catch expired/invalid session from server-side rejection
       if (err.message?.includes('Not authenticated') || err.message?.includes('401')) {
+        persistDraftFromState(draftLocationId);
         setStep('auth');
       } else {
         setError(err.message);
@@ -641,12 +839,21 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
         <div className="w-10" />
       </header>
 
+      {bootstrapping && (
+        <div className="flex flex-col items-center text-center pt-16">
+          <Loader2 size={32} className="animate-spin opacity-20 mb-6" />
+          <h2 className="text-xl font-bold tracking-tight mb-2">Preparing checkout</h2>
+          <p className="text-sm opacity-50">Restoring your latest match...</p>
+        </div>
+      )}
+
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           {error}
         </div>
       )}
 
+      {!bootstrapping && (
       <AnimatePresence mode="wait">
         {/* ---- STEP 1: AUTH ---- */}
         {step === 'auth' && (
@@ -728,6 +935,14 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
             <div className="mb-6">
               <h2 className="text-2xl font-bold tracking-tight mb-2">Match review</h2>
               <p className="text-[11px] opacity-40">Review and confirm, then checkout on QFC.</p>
+              <button
+                onClick={() => {
+                  void handleStartOver();
+                }}
+                className="mt-2 text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-80 transition-opacity"
+              >
+                Start over matching
+              </button>
               {SHOW_RERANK_DEBUG && (
                 <p className="text-[10px] opacity-50 mt-1">Debug mode: detailed matching traces are visible.</p>
               )}
@@ -752,7 +967,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
                       <p className="text-sm font-semibold">{runSummary.decisionSources.fallback}</p>
                     </div>
                     <div className="rounded-md bg-black/[0.03] px-2 py-1.5">
-                      <p className="text-[9px] uppercase tracking-widest opacity-40">Low qty confidence</p>
+                      <p className="text-[9px] uppercase tracking-widest opacity-40">Qty needs review</p>
                       <p className="text-sm font-semibold">{runSummary.lowQtyConfidence}</p>
                     </div>
                     <div className="rounded-md bg-black/[0.03] px-2 py-1.5">
@@ -1006,6 +1221,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
           </motion.div>
         )}
       </AnimatePresence>
+      )}
 
       <div className="h-24" />
     </div>
