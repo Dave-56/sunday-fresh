@@ -108,10 +108,14 @@ export async function fillCart(
   preferences: KVPreferences,
   userToken: string
 ): Promise<FillCartResult> {
+  const t0 = Date.now();
+  console.log('[tg-fill] start', { dish: dish.name });
+
   // Generate full recipe details
   const ai = getGenAIClient();
   const detailPrompt = buildDetailPrompt(dish, preferences);
 
+  const tGemini = Date.now();
   const detailRes = await ai.models.generateContent({
     model: process.env.RECIPE_GENERATION_MODEL || 'gemini-3-flash-preview',
     contents: detailPrompt,
@@ -162,12 +166,17 @@ export async function fillCart(
     },
   });
 
+  const geminiMs = Date.now() - tGemini;
   const detailText = detailRes.text;
-  if (!detailText) throw new Error('Empty detail response from Gemini');
+  if (!detailText) {
+    console.error('[tg-fill] gemini empty response', { geminiMs });
+    throw new Error('Empty detail response from Gemini');
+  }
   const detail = JSON.parse(detailText);
   const ingredients: ShoppingIngredient[] = detail.ingredients || [];
   const sections: RecipeSection[] = detail.sections || [];
   const recipe = { ingredients, sections };
+  console.log('[tg-fill] gemini done', { geminiMs, ingredients: ingredients.length });
 
   // Also add essentials from preferences
   const recipeItemCount = ingredients.length;
@@ -185,6 +194,7 @@ export async function fillCart(
   // Find nearest store using saved zip code
   let locationId: string | undefined;
   if (preferences.zipCode) {
+    const tLoc = Date.now();
     try {
       const token = await getClientToken();
       const locRes = await fetch(
@@ -195,8 +205,9 @@ export async function fillCart(
         const locData = await locRes.json();
         locationId = locData.data?.[0]?.locationId;
       }
+      console.log('[tg-fill] location lookup', { ms: Date.now() - tLoc, status: locRes.status, locationId: locationId || null });
     } catch (err) {
-      console.error('Location lookup failed:', err);
+      console.error('[tg-fill] location lookup failed', { ms: Date.now() - tLoc, err: (err as any)?.message });
     }
   }
 
@@ -205,8 +216,15 @@ export async function fillCart(
   const mappings: IngredientMapping[] = [];
   const clientToken = await getClientToken();
   let llmCallsUsed = 0;
+  const tLoopStart = Date.now();
+  let searchMsTotal = 0;
+  let llmMsTotal = 0;
 
   for (let i = 0; i < totalItemCount; i++) {
+    const tItem = Date.now();
+    let itemSearchMs = 0;
+    let itemLlmMs = 0;
+    let itemBroadened = false;
     const isEssential = i >= recipeItemCount;
 
     // Structured path for recipe ingredients, legacy path for essentials
@@ -237,6 +255,7 @@ export async function fillCart(
       // Collect candidates from all search terms.
       const candidates: ProductCandidate[] = [];
 
+      const tSearch = Date.now();
       for (const term of terms) {
         let url = `${KROGER_API_BASE}/products?filter.term=${encodeURIComponent(term)}&filter.limit=${SEARCH_LIMIT_PRIMARY}`;
         if (locationId) url += `&filter.locationId=${locationId}`;
@@ -253,6 +272,7 @@ export async function fillCart(
         }
         await new Promise((r) => setTimeout(r, 200));
       }
+      itemSearchMs += Date.now() - tSearch;
 
       let filtered = si ? preFilterCandidates(candidates, si) : candidates;
       let ranked = filtered.length > 0
@@ -260,6 +280,8 @@ export async function fillCart(
         : [];
 
       if (locationId && shouldBroadenBeforeLlm(ranked)) {
+        itemBroadened = true;
+        const tBroaden = Date.now();
         const broadenTerms = Array.from(new Set([parsed.coreItem, ...terms]))
           .filter(Boolean)
           .slice(0, 3);
@@ -276,6 +298,7 @@ export async function fillCart(
           }
           await new Promise((r) => setTimeout(r, 200));
         }
+        itemSearchMs += Date.now() - tBroaden;
         filtered = si ? preFilterCandidates(candidates, si) : candidates;
         ranked = filtered.length > 0
           ? rankCandidatesForSelection(filtered, parsed)
@@ -311,6 +334,7 @@ export async function fillCart(
             decisionReason = 'LLM budget cap reached for this cart fill; deterministic selection used.';
             guardrailOverride = 'llm_budget_cap';
           } else {
+            const tLlm = Date.now();
             try {
               const rerankResult = await selectCandidateWithRerank(
                 llmIntent!,
@@ -321,6 +345,7 @@ export async function fillCart(
                   requestId: `tg_${i}`,
                 }
               );
+              itemLlmMs += Date.now() - tLlm;
               llmCallsUsed += 1;
 
               decisionSource = rerankResult.metadata.decisionSource;
@@ -338,9 +363,11 @@ export async function fillCart(
                 forceNeedsReview = true;
               }
             } catch (err: any) {
+              itemLlmMs += Date.now() - tLlm;
               decisionSource = 'fallback';
               decisionReason = err?.message || 'LLM rerank unavailable; deterministic selection used.';
               guardrailOverride = 'llm_error';
+              console.error('[tg-fill] llm rerank failed', { ingredient: displayName, ms: itemLlmMs, err: err?.message });
             }
           }
         }
@@ -383,17 +410,39 @@ export async function fillCart(
       });
     }
 
+    searchMsTotal += itemSearchMs;
+    llmMsTotal += itemLlmMs;
+    console.log('[tg-fill] ingredient', {
+      i: i + 1,
+      of: totalItemCount,
+      name: displayName,
+      essential: isEssential,
+      matched,
+      broadened: itemBroadened,
+      searchMs: itemSearchMs,
+      llmMs: itemLlmMs,
+      totalMs: Date.now() - tItem,
+    });
+
     // Rate limit: 200ms between ingredients
     if (i < totalItemCount - 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
   }
+  console.log('[tg-fill] loop done', {
+    loopMs: Date.now() - tLoopStart,
+    searchMsTotal,
+    llmMsTotal,
+    llmCallsUsed,
+    cartItems: cartItems.length,
+  });
 
   // Add items to Kroger cart
   if (cartItems.length === 0) {
     return { ok: false, error: 'No products found for this recipe.' };
   }
 
+  const tCart = Date.now();
   try {
     const cartRes = await fetch(`${KROGER_API_BASE}/cart/add`, {
       method: 'PUT',
@@ -412,27 +461,28 @@ export async function fillCart(
       const keys = cartResponse && typeof cartResponse === 'object'
         ? Object.keys(cartResponse)
         : [];
-      console.log('Kroger cart response:', {
+      console.log('[tg-fill] cart PUT', {
+        ms: Date.now() - tCart,
         status: cartRes.status,
         itemsSubmitted: cartItems.length,
         responseKeys: keys,
       });
     } catch {
-      // Response may not be JSON
-      console.log('Kroger cart response:', { status: cartRes.status, itemsSubmitted: cartItems.length });
+      console.log('[tg-fill] cart PUT', { ms: Date.now() - tCart, status: cartRes.status, itemsSubmitted: cartItems.length });
     }
 
     if (!cartRes.ok) {
-      console.error('Cart add failed:', cartRes.status);
+      console.error('[tg-fill] cart add failed', { status: cartRes.status });
       return {
         ok: false,
         error: `Mapped ${cartItems.length} items but couldn't add to cart (status ${cartRes.status}).`,
       };
     }
 
+    console.log('[tg-fill] done', { totalMs: Date.now() - t0, itemCount: cartItems.length });
     return { ok: true, itemCount: cartItems.length, cartResponse, recipe, mappings };
   } catch (err: any) {
-    console.error('Kroger cart error:', err);
+    console.error('[tg-fill] cart PUT error', { ms: Date.now() - tCart, err: err?.message });
     return { ok: false, error: 'Kroger cart request failed.' };
   }
 }
@@ -443,6 +493,8 @@ export async function fillCart(
 export async function handleMealSelection(
   selection: number | null
 ): Promise<SelectionResult> {
+  const tStart = Date.now();
+  console.log('[tg-select] start', { selection });
   // Load pending meals
   const pending = await redis.get<KVPendingMeals>(KV_KEYS.pendingMeals);
 
@@ -463,6 +515,7 @@ export async function handleMealSelection(
   const krogerSessionId = await redis.get<string>(KV_KEYS.krogerSessionPointer);
 
   if (!krogerSessionId) {
+    console.log('[tg-select] needsAuth: no session pointer');
     return {
       ok: false,
       error: 'No Kroger session found. Sign in to fill your cart.',
@@ -476,7 +529,8 @@ export async function handleMealSelection(
   let userToken: string;
   try {
     userToken = await getUserToken(krogerSessionId);
-  } catch {
+  } catch (err: any) {
+    console.log('[tg-select] needsAuth: session expired', { err: err?.message });
     // Session is dead — clear both pointer and session to prevent stale-pointer loop
     await redis.del(KV_KEYS.krogerSessionPointer);
     await deleteUserSession(krogerSessionId);
@@ -497,6 +551,7 @@ export async function handleMealSelection(
 
   // Fill the cart
   const result = await fillCart(dish, preferences, userToken);
+  console.log('[tg-select] fillCart returned', { ok: result.ok, totalMs: Date.now() - tStart });
 
   if (result.ok === false) {
     return { ok: false as const, error: result.error };

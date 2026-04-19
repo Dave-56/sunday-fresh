@@ -68,25 +68,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.json({ ok: true });
       }
 
-      // Delete old messages from chat
-      if (pending?.messageIds) {
-        await Promise.all(pending.messageIds.map((id) => deleteMessage(id)));
-      }
+      // Acknowledge webhook immediately, then do heavy work in background.
+      res.json({ ok: true });
 
-      // Let the user know it's working
-      const waitMsgId = await sendTextMessage('Generating new options...');
+      waitUntil(
+        (async () => {
+          // Delete old messages from chat
+          if (pending?.messageIds) {
+            await Promise.all(pending.messageIds.map((id) => deleteMessage(id)));
+          }
 
-      try {
-        await generateAndSendMeals();
-        // Clean up the "Generating..." message
-        await deleteMessage(waitMsgId);
-      } catch (err: any) {
-        console.error('Regenerate failed:', err);
-        await deleteMessage(waitMsgId);
-        await sendError("Couldn't regenerate meals — try again or open the app.");
-      }
+          // Let the user know it's working
+          const waitMsgId = await sendTextMessage('Generating new options...');
 
-      return res.json({ ok: true });
+          try {
+            await generateAndSendMeals();
+            // Clean up the "Generating..." message
+            await deleteMessage(waitMsgId);
+          } catch (err: any) {
+            console.error('Regenerate failed:', err);
+            await deleteMessage(waitMsgId);
+            await sendError("Couldn't regenerate meals — try again or open the app.");
+          }
+        })()
+      );
+
+      return;
     }
 
     // --- Meal selection flow ---
@@ -131,6 +138,8 @@ async function handleAndNotify(
   selection: number | null,
   lockKey: string
 ): Promise<void> {
+  const tStart = Date.now();
+  console.log('[tg-notify] start', { selection });
   // Send a progress message so the user knows something is happening
   const progressId = await sendTextMessage(
     'sunday. — Great pick! Generating your recipe and filling your cart now...'
@@ -143,6 +152,7 @@ async function handleAndNotify(
     await deleteMessage(progressId);
 
     if (result.ok === true) {
+      console.log('[tg-notify] success, sending cart + recipe', { totalMs: Date.now() - tStart, itemCount: result.itemCount });
       await sendCartSummary(result.mappings, result.itemCount);
       await Promise.all([
         sendRecipeCard(result.dish, result.recipe),
@@ -153,7 +163,9 @@ async function handleAndNotify(
           filledAt: Date.now(),
         }, { ex: KV_TTL.activeRecipe }),
       ]);
+      console.log('[tg-notify] done', { totalMs: Date.now() - tStart });
     } else if (result.needsAuth && result.dish && result.selection) {
+      console.log('[tg-notify] needsAuth — sending sign-in button', { totalMs: Date.now() - tStart });
       // Release lock — no cart fill happened, user needs to auth first
       await redis.del(lockKey);
       const oauthUrl = await buildOAuthUrl({
@@ -164,12 +176,13 @@ async function handleAndNotify(
       });
       await sendSignInButton(oauthUrl);
     } else {
+      console.log('[tg-notify] failed — sending error', { totalMs: Date.now() - tStart, error: result.error });
       // Release lock on non-fill failures so user can retry
       await redis.del(lockKey);
       await sendError(result.error);
     }
   } catch (err: any) {
-    console.error('handleAndNotify error:', err);
+    console.error('[tg-notify] unhandled error', { totalMs: Date.now() - tStart, err: err?.message, stack: err?.stack });
     await deleteMessage(progressId);
     await redis.del(lockKey);
     try {
