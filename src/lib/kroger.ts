@@ -62,14 +62,24 @@ export async function searchProducts(
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to search products");
   const data = await res.json();
-  return (data.data || []).map((p: any) => ({
-    productId: p.productId,
-    upc: p.upc,
-    description: p.description,
-    brand: p.brand,
-    images: p.images,
-    items: p.items,
-  }));
+  return (data.data || []).map((p: any) => {
+    // Kroger only populates inventory / fulfillment on items[0] when
+    // filter.locationId was passed. Missing data stays undefined and
+    // classifyAvailability treats it as 'ok' downstream.
+    const firstItem = Array.isArray(p.items) ? p.items[0] : undefined;
+    const stockLevel = firstItem?.inventory?.stockLevel as KrogerStockLevel | undefined;
+    const fulfillment = firstItem?.fulfillment as KrogerFulfillment | undefined;
+    return {
+      productId: p.productId,
+      upc: p.upc,
+      description: p.description,
+      brand: p.brand,
+      images: p.images,
+      items: p.items,
+      stockLevel,
+      fulfillment,
+    };
+  });
 }
 
 export interface ProductRerankIngredientIntent {
@@ -81,6 +91,15 @@ export interface ProductRerankIngredientIntent {
   qtyMode: 'container' | 'unit-count' | 'single-pack';
 }
 
+export type KrogerStockLevel = 'HIGH' | 'LOW' | 'TEMPORARILY_OUT_OF_STOCK';
+
+export interface KrogerFulfillment {
+  inStore?: boolean;
+  shipToHome?: boolean;
+  delivery?: boolean;
+  curbside?: boolean;
+}
+
 export interface ProductRerankCandidate {
   upc: string;
   description: string;
@@ -88,11 +107,17 @@ export interface ProductRerankCandidate {
   size?: string;
   soldBy?: string;
   countPerPack?: number;
+  stockLevel?: KrogerStockLevel;
+  fulfillment?: KrogerFulfillment;
 }
+
+export type AvailabilityTier = 'ok' | 'weak' | 'out';
 
 export interface ProductRerankResponse {
   decision: 'select' | 'needs_review' | 'no_match';
   selectedUpc: string | null;
+  backupUpc: string | null;
+  availability: AvailabilityTier;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
   metadata: {
@@ -196,6 +221,10 @@ export interface KrogerProduct {
   brand: string;
   images: any[];
   items: any[];
+  /** Location-scoped stock signal from items[0].inventory.stockLevel, when present */
+  stockLevel?: KrogerStockLevel;
+  /** Location-scoped fulfillment flags from items[0].fulfillment, when present */
+  fulfillment?: KrogerFulfillment;
 }
 
 export interface CartItem {

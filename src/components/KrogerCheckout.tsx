@@ -13,6 +13,7 @@ import {
   type ProductRerankIngredientIntent,
   type ProductRerankResponse,
   type KrogerProduct,
+  type AvailabilityTier,
 } from '../lib/kroger';
 import { Dish, ShoppingIngredient, EssentialItem, isStructuredIngredients, type ReconciliationResult } from '../types';
 import { getAllItems as collectItems, getSearchTermsFromIntent } from '../lib/ingredients';
@@ -48,6 +49,12 @@ interface MatchedCartItem extends CartItem {
   decisionSource?: 'llm' | 'fallback' | 'deterministic';
   decisionReason?: string;
   guardrailOverride?: string;
+  /** Primary's availability tier at the searched location (heuristic). */
+  availability?: AvailabilityTier;
+  /** Pre-vetted backup UPC — distinct from primary, availability !== 'out'. */
+  backupUpc?: string | null;
+  backupDescription?: string | null;
+  backupBrand?: string | null;
 }
 
 interface MappingRunSummary {
@@ -82,7 +89,9 @@ interface CheckoutDraftV1 {
 }
 
 const CHECKOUT_DRAFT_KEY = 'kroger_checkout_draft_v1';
-const CHECKOUT_DRAFT_VERSION = 1;
+// Bumped to 2 when availability + backup fields were added to MatchedCartItem.
+// Older drafts lack these fields and are discarded on load.
+const CHECKOUT_DRAFT_VERSION = 2;
 const CHECKOUT_DRAFT_MAX_AGE_MS = 30 * 60 * 1000;
 
 const ENABLE_LLM_RERANK_WEB =
@@ -393,6 +402,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
   const [mappingProgress, setMappingProgress] = useState({ current: 0, total: 0 });
   const [addingToCart, setAddingToCart] = useState(false);
   const [submittedCount, setSubmittedCount] = useState(0);
+  const [backupsKeptCount, setBackupsKeptCount] = useState(0);
   const [runSummary, setRunSummary] = useState<MappingRunSummary | null>(null);
   const [showRunSummary, setShowRunSummary] = useState(false);
   const [draftLocationId, setDraftLocationId] = useState<string | undefined>(undefined);
@@ -558,6 +568,8 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
           let decisionSource: MatchedCartItem['decisionSource'] = 'deterministic';
           let decisionReason: string | undefined;
           let guardrailOverride: string | undefined;
+          let availability: AvailabilityTier | undefined;
+          let backupCandidate: ProductCandidate | undefined;
 
           const topRanked = ranked[0];
           const shouldTryLlm =
@@ -590,6 +602,7 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
                 decisionSource = rerank.metadata.decisionSource;
                 decisionReason = rerank.reason;
                 guardrailOverride = rerank.metadata.guardrailOverride;
+                availability = rerank.availability;
 
                 if (rerank.decision === 'no_match') {
                   best = undefined;
@@ -597,6 +610,10 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
                 } else if (rerank.selectedUpc) {
                   const selected = ranked.find((r) => r.upc === rerank.selectedUpc);
                   if (selected) best = selected;
+                }
+
+                if (rerank.backupUpc) {
+                  backupCandidate = filtered.find((c) => c.upc === rerank!.backupUpc);
                 }
 
                 if (rerank.decision === 'needs_review') {
@@ -637,6 +654,10 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
               decisionSource,
               decisionReason,
               guardrailOverride,
+              availability,
+              backupUpc: backupCandidate?.upc ?? null,
+              backupDescription: backupCandidate?.description ?? null,
+              backupBrand: backupCandidate?.brand ?? null,
             });
             found = true;
           }
@@ -782,6 +803,23 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
     setCartItems(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const handleSwapBackup = (idx: number) => {
+    setCartItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      if (!item.backupUpc || !item.backupDescription) return item;
+      return {
+        ...item,
+        upc: item.backupUpc,
+        description: item.backupDescription,
+        brand: item.backupBrand || '',
+        availability: 'ok',
+        backupUpc: null,
+        backupDescription: null,
+        backupBrand: null,
+      };
+    }));
+  };
+
   const handleStartOver = async () => {
     clearCheckoutDraft();
     setApprovedSubstituteUpcs([]);
@@ -812,8 +850,21 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
         setAddingToCart(false);
         return;
       }
+      const submittedItems = cartItems.filter(
+        (ci) => ci.matchType !== 'substitute' || approvedSubstituteUpcs.includes(ci.upc)
+      );
+      const backupsKept = submittedItems.filter(
+        (ci) => ci.availability && ci.availability !== 'ok' && !!ci.backupUpc
+      ).length;
+      console.log('[kroger-checkout] submit', {
+        total: items.length,
+        backupsKept,
+        weakCount: submittedItems.filter((ci) => ci.availability === 'weak').length,
+        outCount: submittedItems.filter((ci) => ci.availability === 'out').length,
+      });
       await addToCart(items);
       setSubmittedCount(items.length);
+      setBackupsKeptCount(backupsKept);
       clearCheckoutDraft();
       setStep('done');
     } catch (err: any) {
@@ -1032,37 +1083,70 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
                   {exactItems.map((item, i) => {
                     const globalIdx = cartItems.indexOf(item);
                     const qtyMismatch = item.qtyConfidence === 'low';
+                    const showBackup = item.availability && item.availability !== 'ok' && !!item.backupUpc;
                     return (
-                      <div key={`e-${i}`} className="flex items-center gap-3 p-3 bg-white border border-black/5 rounded-xl">
-                        <Package size={16} className="opacity-20 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-snug break-words">
-                            {item.description}
-                            {item.quantity > 1 && <span className="opacity-40"> x{item.quantity}</span>}
-                          </p>
-                          <p className="text-[10px] opacity-40 leading-snug break-words">{item.brand} — from: {item.name}</p>
-                          {item.isEssential && (
-                            <p className="text-[10px] opacity-50 mt-0.5">(Essential Vault item)</p>
-                          )}
-                          {SHOW_RERANK_DEBUG && item.decisionSource && (
-                            <p className="text-[10px] opacity-50 mt-0.5">
-                              Decision: {item.decisionSource}
-                              {item.guardrailOverride ? ` (${item.guardrailOverride})` : ''}
-                              {item.decisionReason ? ` — ${item.decisionReason}` : ''}
+                      <div key={`e-${i}`}>
+                        <div className={`flex items-center gap-3 p-3 bg-white border border-black/5 ${showBackup ? 'rounded-t-xl border-b-0' : 'rounded-xl'}`}>
+                          <Package size={16} className="opacity-20 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium leading-snug break-words">
+                              {item.description}
+                              {item.quantity > 1 && <span className="opacity-40"> x{item.quantity}</span>}
                             </p>
-                          )}
-                          {qtyMismatch && (
-                            <p className="text-[10px] text-amber-700 mt-0.5">
-                              Recipe needs {item.recipeQty}, cart has {item.quantity}
-                            </p>
-                          )}
+                            <p className="text-[10px] opacity-40 leading-snug break-words">{item.brand} — from: {item.name}</p>
+                            {item.availability === 'out' && (
+                              <span className="inline-block mt-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest bg-red-50 text-red-700 rounded">
+                                may be unavailable
+                              </span>
+                            )}
+                            {item.availability === 'weak' && (
+                              <span className="inline-block mt-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest bg-amber-50 text-amber-700 rounded">
+                                low stock
+                              </span>
+                            )}
+                            {item.isEssential && (
+                              <p className="text-[10px] opacity-50 mt-0.5">(Essential Vault item)</p>
+                            )}
+                            {SHOW_RERANK_DEBUG && item.decisionSource && (
+                              <p className="text-[10px] opacity-50 mt-0.5">
+                                Decision: {item.decisionSource}
+                                {item.guardrailOverride ? ` (${item.guardrailOverride})` : ''}
+                                {item.decisionReason ? ` — ${item.decisionReason}` : ''}
+                              </p>
+                            )}
+                            {qtyMismatch && (
+                              <p className="text-[10px] text-amber-700 mt-0.5">
+                                Recipe needs {item.recipeQty}, cart has {item.quantity}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleRemoveItem(globalIdx)}
+                            className="p-1 hover:bg-black/5 rounded-full transition-colors flex-shrink-0"
+                          >
+                            <X size={14} className="opacity-30" />
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleRemoveItem(globalIdx)}
-                          className="p-1 hover:bg-black/5 rounded-full transition-colors flex-shrink-0"
-                        >
-                          <X size={14} className="opacity-30" />
-                        </button>
+                        {showBackup && (
+                          <button
+                            onClick={() => handleSwapBackup(globalIdx)}
+                            className="w-full flex items-center gap-3 px-3 py-2 bg-black/[0.02] border border-black/5 border-t-0 rounded-b-xl text-left hover:bg-black/5 transition-colors"
+                          >
+                            <div className="w-4 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-widest opacity-40">Backup ready</p>
+                              <p className="text-[11px] leading-snug break-words mt-0.5">
+                                {item.backupDescription}
+                              </p>
+                              <p className="text-[10px] opacity-40 leading-snug break-words">
+                                {item.backupBrand}
+                              </p>
+                            </div>
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 flex-shrink-0">
+                              Swap
+                            </span>
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -1197,9 +1281,15 @@ export default function KrogerCheckout({ dish, essentials, savedZipCode, onBack 
               <Check size={28} className="text-green-600" />
             </div>
             <h2 className="text-2xl font-bold tracking-tight mb-3">{submittedCount || cartItems.length} items added</h2>
-            <p className="text-sm opacity-60 leading-relaxed mb-8 max-w-xs">
+            <p className="text-sm opacity-60 leading-relaxed mb-3 max-w-xs">
               Finish checkout on QFC whenever you're ready.
             </p>
+            {backupsKeptCount > 0 && (
+              <p className="text-[11px] text-amber-700/90 leading-relaxed mb-8 max-w-xs">
+                Noted {backupsKeptCount} backup{backupsKeptCount > 1 ? 's' : ''} in case anything's unavailable at pickup.
+              </p>
+            )}
+            {backupsKeptCount === 0 && <div className="mb-8" />}
             <div className="flex flex-col gap-3 w-full">
               <button
                 onClick={() => {

@@ -43,6 +43,15 @@ export interface ParsedIngredient {
   avoidTerms: string[];
 }
 
+export type KrogerStockLevel = 'HIGH' | 'LOW' | 'TEMPORARILY_OUT_OF_STOCK';
+
+export interface KrogerFulfillment {
+  inStore?: boolean;
+  shipToHome?: boolean;
+  delivery?: boolean;
+  curbside?: boolean;
+}
+
 export interface ProductCandidate {
   upc: string;
   description: string;
@@ -53,6 +62,10 @@ export interface ProductCandidate {
   soldBy?: string;
   /** Optional count hint from Kroger payload */
   countPerPack?: number;
+  /** Kroger inventory.stockLevel for the searched location, when present */
+  stockLevel?: KrogerStockLevel;
+  /** Kroger fulfillment booleans for the searched location, when present */
+  fulfillment?: KrogerFulfillment;
 }
 
 export interface ScoredCandidate extends ProductCandidate {

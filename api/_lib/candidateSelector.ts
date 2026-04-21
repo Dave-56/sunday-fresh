@@ -11,9 +11,11 @@ import {
 import {
   classifyIngredientClass,
   bucketProductCandidate,
+  classifyAvailability,
   CANDIDATE_BUCKET_ORDER,
   type IngredientClass,
   type CandidateBucket,
+  type AvailabilityTier,
 } from './ingredientSignals.js';
 
 export type RerankDecision = 'select' | 'needs_review' | 'no_match';
@@ -27,7 +29,12 @@ export interface SelectionMetadata {
 
 export interface SelectionResult {
   decision: RerankDecision;
+  /** Primary UPC to put in the cart (after any availability-aware promotion). */
   selectedUpc: string | null;
+  /** Next-best distinct-UPC candidate with availability !== 'out'; null when none. */
+  backupUpc: string | null;
+  /** Availability tier of the primary candidate (searched-location heuristic). */
+  availability: AvailabilityTier;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
   metadata: SelectionMetadata;
@@ -170,6 +177,8 @@ function finalizeDecision(
     return {
       decision: 'no_match',
       selectedUpc: null,
+      backupUpc: null,
+      availability: 'ok',
       confidence: confidenceOverride ?? 'low',
       reason: reasonOverride ?? 'No viable candidate found.',
       metadata: {
@@ -185,6 +194,8 @@ function finalizeDecision(
     return {
       decision: 'no_match',
       selectedUpc: null,
+      backupUpc: null,
+      availability: 'ok',
       confidence: 'low',
       reason: reasonOverride ?? 'Top candidate was too weak to trust.',
       metadata: {
@@ -200,6 +211,8 @@ function finalizeDecision(
     return {
       decision: 'needs_review',
       selectedUpc: candidate.upc,
+      backupUpc: null,
+      availability: 'ok',
       confidence: 'low',
       reason:
         reasonOverride ??
@@ -221,6 +234,8 @@ function finalizeDecision(
     return {
       decision: 'needs_review',
       selectedUpc: candidate.upc,
+      backupUpc: null,
+      availability: 'ok',
       confidence: 'medium',
       reason:
         reasonOverride ??
@@ -238,6 +253,8 @@ function finalizeDecision(
     return {
       decision: 'needs_review',
       selectedUpc: candidate.upc,
+      backupUpc: null,
+      availability: 'ok',
       confidence: clampConfidenceByQty(
         confidenceOverride ?? 'medium',
         candidate.qtyDecision.confidence
@@ -259,6 +276,8 @@ function finalizeDecision(
   return {
     decision: 'select',
     selectedUpc: candidate.upc,
+    backupUpc: null,
+    availability: 'ok',
     confidence: clampConfidenceByQty(
       confidenceOverride ?? 'high',
       candidate.qtyDecision.confidence
@@ -269,6 +288,74 @@ function finalizeDecision(
       latencyMs: Date.now() - startedAt,
       ...(guardrailOverride ? { guardrailOverride } : {}),
     },
+  };
+}
+
+/**
+ * Enrich a SelectionResult with searched-location availability signals.
+ *
+ * Rules:
+ *   - If the chosen primary's availability is 'out' and any distinct
+ *     non-out candidate exists, promote that candidate to primary and
+ *     annotate the reason. Logged as `selector.availability_promoted`.
+ *   - backupUpc is the next-best distinct-UPC candidate with
+ *     availability !== 'out' (post-promotion), or null when none.
+ *   - availability reflects the final primary.
+ *
+ * Missing Kroger inventory/fulfillment fields classify as 'ok', so rows
+ * without location-scoped data round-trip through this helper unchanged.
+ */
+export function applyAvailability(
+  result: SelectionResult,
+  chosen: RankedCandidateWithQuantity | null,
+  ranked: RankedCandidateWithQuantity[],
+  requestId: string | undefined,
+  ingredient: StructuredIngredientIntent
+): SelectionResult {
+  if (!chosen || !result.selectedUpc) {
+    return result;
+  }
+
+  const chosenAvailability = classifyAvailability(chosen);
+  let primary = chosen;
+  let primaryAvailability: AvailabilityTier = chosenAvailability;
+  let promoted = false;
+
+  if (chosenAvailability === 'out') {
+    const alt = ranked.find(
+      (r) => r.upc !== chosen.upc && classifyAvailability(r) !== 'out'
+    );
+    if (alt) {
+      primary = alt;
+      primaryAvailability = classifyAvailability(alt);
+      promoted = true;
+    }
+  }
+
+  const backup =
+    ranked.find(
+      (r) => r.upc !== primary.upc && classifyAvailability(r) !== 'out'
+    ) ?? null;
+
+  if (promoted) {
+    logRerankDebug('selector.availability_promoted', {
+      requestId,
+      ingredient: ingredient.display,
+      originalUpc: chosen.upc,
+      primaryUpc: primary.upc,
+      backupUpc: backup?.upc ?? null,
+      reason: 'original_out_of_stock',
+    });
+  }
+
+  return {
+    ...result,
+    selectedUpc: primary.upc,
+    availability: primaryAvailability,
+    backupUpc: backup?.upc ?? null,
+    reason: promoted
+      ? `${result.reason} (Promoted from out-of-stock top pick.)`
+      : result.reason,
   };
 }
 
@@ -441,22 +528,34 @@ export async function selectCandidateWithRerank(
   });
 
   if (!deterministicBest) {
-    return logResult('no_candidates', finalizeDecision(
+    return logResult('no_candidates', applyAvailability(
+      finalizeDecision(
+        null,
+        'deterministic',
+        startedAt,
+        'No candidates remained after filtering.',
+        'low'
+      ),
       null,
-      'deterministic',
-      startedAt,
-      'No candidates remained after filtering.',
-      'low'
+      ranked,
+      requestId,
+      intent
     ));
   }
 
   if (!options?.enableLlm) {
-    return logResult('llm_disabled', finalizeDecision(
+    return logResult('llm_disabled', applyAvailability(
+      finalizeDecision(
+        deterministicBest,
+        'deterministic',
+        startedAt,
+        'LLM reranker disabled.',
+        deterministicBest.matchType === 'exact' ? 'high' : 'medium'
+      ),
       deterministicBest,
-      'deterministic',
-      startedAt,
-      'LLM reranker disabled.',
-      deterministicBest.matchType === 'exact' ? 'high' : 'medium'
+      ranked,
+      requestId,
+      intent
     ));
   }
 
@@ -467,12 +566,18 @@ export async function selectCandidateWithRerank(
     deterministicBest.matchType === 'substitute' || deterministicBest.qtyDecision.confidence !== 'high';
 
   if (!inAmbiguousBand && !needsHumanOrModelReview) {
-    return logResult('llm_skipped_clear_deterministic', finalizeDecision(
+    return logResult('llm_skipped_clear_deterministic', applyAvailability(
+      finalizeDecision(
+        deterministicBest,
+        'deterministic',
+        startedAt,
+        `Deterministic score ${deterministicBest.score} outside LLM band (${llmMinScore}-${llmMaxScore}).`,
+        deterministicBest.matchType === 'exact' ? 'high' : 'medium'
+      ),
       deterministicBest,
-      'deterministic',
-      startedAt,
-      `Deterministic score ${deterministicBest.score} outside LLM band (${llmMinScore}-${llmMaxScore}).`,
-      deterministicBest.matchType === 'exact' ? 'high' : 'medium'
+      ranked,
+      requestId,
+      intent
     ), {
       llmMinScore,
       llmMaxScore,
@@ -577,6 +682,8 @@ export async function selectCandidateWithRerank(
       return logResult('llm_no_match', {
         decision: 'no_match',
         selectedUpc: null,
+        backupUpc: null,
+        availability: 'ok',
         confidence: llm.confidence,
         reason: llm.reason,
         metadata: {
@@ -587,41 +694,65 @@ export async function selectCandidateWithRerank(
     }
 
     if (!llm.selectedUpc) {
-      return logResult('llm_missing_selected_upc', finalizeDecision(
+      return logResult('llm_missing_selected_upc', applyAvailability(
+        finalizeDecision(
+          deterministicBest,
+          'fallback',
+          startedAt,
+          'LLM decision missing UPC; used deterministic fallback.',
+          'medium',
+          'missing_selected_upc'
+        ),
         deterministicBest,
-        'fallback',
-        startedAt,
-        'LLM decision missing UPC; used deterministic fallback.',
-        'medium',
-        'missing_selected_upc'
+        ranked,
+        requestId,
+        intent
       ));
     }
 
     const chosen = ranked.find((r) => r.upc === llm.selectedUpc) || null;
     if (!chosen) {
-      return logResult('llm_selected_upc_not_found', finalizeDecision(
+      return logResult('llm_selected_upc_not_found', applyAvailability(
+        finalizeDecision(
+          deterministicBest,
+          'fallback',
+          startedAt,
+          'LLM selected UPC not in candidate set; used deterministic fallback.',
+          'medium',
+          'selected_upc_not_found'
+        ),
         deterministicBest,
-        'fallback',
-        startedAt,
-        'LLM selected UPC not in candidate set; used deterministic fallback.',
-        'medium',
-        'selected_upc_not_found'
+        ranked,
+        requestId,
+        intent
       ));
     }
 
     if (llm.decision === 'needs_review') {
-      return logResult('llm_needs_review', finalizeDecision(
+      return logResult('llm_needs_review', applyAvailability(
+        finalizeDecision(
+          chosen,
+          'llm',
+          startedAt,
+          llm.reason,
+          llm.confidence
+        ),
         chosen,
-        'llm',
-        startedAt,
-        llm.reason,
-        llm.confidence
+        ranked,
+        requestId,
+        intent
       ));
     }
 
     return logResult(
       'llm_select',
-      finalizeDecision(chosen, 'llm', startedAt, llm.reason, llm.confidence)
+      applyAvailability(
+        finalizeDecision(chosen, 'llm', startedAt, llm.reason, llm.confidence),
+        chosen,
+        ranked,
+        requestId,
+        intent
+      )
     );
   } catch (err: any) {
     const timedOut = err?.message === 'llm_timeout';
@@ -631,15 +762,21 @@ export async function selectCandidateWithRerank(
       timedOut,
       error: toSerializableError(err),
     });
-    return logResult('llm_error_fallback', finalizeDecision(
+    return logResult('llm_error_fallback', applyAvailability(
+      finalizeDecision(
+        deterministicBest,
+        'fallback',
+        startedAt,
+        timedOut
+          ? 'LLM rerank timed out; used deterministic fallback.'
+          : 'LLM rerank failed; used deterministic fallback.',
+        deterministicBest.matchType === 'exact' ? 'high' : 'medium',
+        timedOut ? 'llm_timeout' : 'llm_error'
+      ),
       deterministicBest,
-      'fallback',
-      startedAt,
-      timedOut
-        ? 'LLM rerank timed out; used deterministic fallback.'
-        : 'LLM rerank failed; used deterministic fallback.',
-      deterministicBest.matchType === 'exact' ? 'high' : 'medium',
-      timedOut ? 'llm_timeout' : 'llm_error'
+      ranked,
+      requestId,
+      intent
     ));
   }
 }

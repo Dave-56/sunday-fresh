@@ -18,6 +18,8 @@ export type CandidateBucket =
   | 'household'
   | 'other';
 
+export type AvailabilityTier = 'ok' | 'weak' | 'out';
+
 export const CANDIDATE_BUCKET_ORDER: CandidateBucket[] = [
   'produce',
   'protein',
@@ -66,6 +68,52 @@ export function classifyIngredientClass(
     return 'fresh-produce';
   }
   return 'other';
+}
+
+/**
+ * Classify a candidate's availability signal from Kroger's location-scoped
+ * inventory + fulfillment fields. Missing data defaults to 'ok' — we don't
+ * punish absent signals, since Kroger omits these fields when no locationId
+ * is passed in the product search.
+ *
+ * - 'out':   stockLevel TEMPORARILY_OUT_OF_STOCK, OR every fulfillment flag
+ *            is explicitly false.
+ * - 'weak':  stockLevel LOW, OR only shipToHome is true among the four
+ *            fulfillment flags (no local option at all).
+ * - 'ok':    everything else, including missing data.
+ */
+export function classifyAvailability(
+  candidate: Pick<ProductCandidate, 'stockLevel' | 'fulfillment'>
+): AvailabilityTier {
+  const { stockLevel, fulfillment } = candidate;
+
+  if (stockLevel === 'TEMPORARILY_OUT_OF_STOCK') return 'out';
+
+  if (fulfillment) {
+    const flags = [
+      fulfillment.inStore,
+      fulfillment.shipToHome,
+      fulfillment.delivery,
+      fulfillment.curbside,
+    ];
+    const allDefined = flags.every((f) => typeof f === 'boolean');
+    if (allDefined) {
+      const anyTrue = flags.some((f) => f === true);
+      if (!anyTrue) return 'out';
+
+      if (
+        fulfillment.shipToHome === true &&
+        fulfillment.inStore === false &&
+        fulfillment.delivery === false &&
+        fulfillment.curbside === false
+      ) {
+        return 'weak';
+      }
+    }
+  }
+
+  if (stockLevel === 'LOW') return 'weak';
+  return 'ok';
 }
 
 export function bucketProductCandidate(
